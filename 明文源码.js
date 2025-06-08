@@ -3215,7 +3215,7 @@ async function bestIP(request, env, txt = 'ADD.txt') {
                 latency: displayLatency,
                 originalLatency: bestResult.latency,
                 testCount: results.length,
-                display: \`\${ip}:\${port}#CF优选IP \${displayLatency}ms\`
+                display: \`\${ip}:\${port}#佐罗优选IP \${displayLatency}ms\`
             };
         }
         
