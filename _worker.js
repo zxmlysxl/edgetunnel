@@ -144,20 +144,7 @@ export default {
                     } else if (区分大小写访问路径 === 'admin/ADD.txt') { // 保存自定义优选IP
                         try {
                             const customIPs = await request.text();
-                            // 验证格式（简单验证）
-                            const lines = customIPs.trim().split('\n').filter(line => line.trim());
-                            const validLines = lines.filter(line => {
-                                // 基本格式验证：IP[:端口][#备注]
-                                const regex = /^(\[[\da-fA-F:]+\]|[\d.]+)(?::(\d+))?(?:#(.+))?$/;
-                                return regex.test(line.trim());
-                            });
-
-                            if (validLines.length === 0 && lines.length > 0) {
-                                return new Response(JSON.stringify({ error: 'IP格式不正确，请检查格式' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
-                            }
-
-                            // 保存到 KV
-                            await env.KV.put('ADD.txt', customIPs);
+                            await env.KV.put('ADD.txt', customIPs);// 保存到 KV
                             await 请求日志记录(env, request, 访问IP, 'Save_Custom_IPs', config_JSON);
                             return new Response(JSON.stringify({ success: true, message: '自定义IP已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         } catch (error) {
