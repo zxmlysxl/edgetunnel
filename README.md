@@ -102,11 +102,11 @@
 
 ## 🔑 变量说明
 
-| 变量名 | 示例 | 必填 | 备注 | YT |
+| 变量名 | 示例 | 必填 | 备注 |
 |--------|---------|-|-----|-----|
-| ADMIN | `123456` |✅| 可输入任意值(非UUIDv4标准的值会自动切换成动态UUID) | [Video](https://www.youtube.com/watch?v=s91zjpw3-P8&t=72s) |
-| KEY | `token` |❌| 动态UUID秘钥，使用变量`KEY`的时候，将不再启用变量`UUID`|  |
-| URL | `https://blog.cmliussss.com` |❌| 主页反代伪装(支持多url, url之间使用`,`或`换行`作间隔, 乱设容易触发反诈) |  |
+| ADMIN | `123456` |✅| 面板登录密码 |
+| KEY | `token` |❌| 快速订阅密钥，访问`/token`即可快读订阅。 |
+| URL | `https://blog.cmliussss.com` |❌| 主页反代伪装(支持多url, url之间使用`,`或`换行`作间隔, 乱设容易触发反诈) |
 
 
 ## 🔧 实用技巧
