@@ -181,8 +181,8 @@ export default {
                     const UD = Math.floor(((now - today.getTime()) / 86400000) * 24 * 1099511627776 / 2);
                     let pagesSum = UD, workersSum = UD, total = 24 * 1099511627776;
                     if (config_JSON.CF.Usage.success) {
-                        pagesSum = config_JSON.CF.Usage.pages_sum;
-                        workersSum = config_JSON.CF.Usage.workers_sum;
+                        pagesSum = config_JSON.CF.Usage.pages;
+                        workersSum = config_JSON.CF.Usage.workers;
                         total = 1024 * 100;
                     }
                     const responseHeaders = {
