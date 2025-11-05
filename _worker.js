@@ -52,9 +52,22 @@ export default {
                         const Usage_JSON = await getCloudflareUsage(url.searchParams.get('Email'), url.searchParams.get('GlobalAPIKey'), url.searchParams.get('AccountID'), url.searchParams.get('APIToken'));
                         return new Response(JSON.stringify(Usage_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json' } });
                     } catch (err) {
-                        const errorResponse = { init: '查询请求量失败，失败原因：' + err.message, error: err.message };
+                        const errorResponse = { msg: '查询请求量失败，失败原因：' + err.message, error: err.message };
                         return new Response(JSON.stringify(errorResponse, null, 2), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                     }
+                } else if (区分大小写访问路径 === 'admin/getADDAPI') {// 验证优选API
+                    if (url.searchParams.get('url')) {
+                        const 待验证优选URL = url.searchParams.get('url');
+                        try {
+                            new URL(待验证优选URL);
+                            const 优选API的IP = await 请求优选API([待验证优选URL], url.searchParams.get('port') || '443');
+                            return new Response(JSON.stringify({ success: true, data: 优选API的IP }, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        } catch (err) {
+                            const errorResponse = { msg: '验证优选API失败，失败原因：' + err.message, error: err.message };
+                            return new Response(JSON.stringify(errorResponse, null, 2), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                        }
+                    }
+                    return new Response(JSON.stringify({ success: false, data: [] }, null, 2), { status: 403, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 }
 
                 config_JSON = await 读取config_JSON(env, url.host, userID);
@@ -66,7 +79,7 @@ export default {
                         config_JSON.init = '配置已重置为默认值';
                         return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                     } catch (err) {
-                        const errorResponse = { init: '配置重置失败，失败原因：' + err.message, error: err.message };
+                        const errorResponse = { msg: '配置重置失败，失败原因：' + err.message, error: err.message };
                         return new Response(JSON.stringify(errorResponse, null, 2), { status: 500, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                     }
                 } else if (request.method === 'POST') {// 处理 KV 操作（POST 请求）
@@ -88,19 +101,20 @@ export default {
                         try {
                             const newConfig = await request.json();
                             const CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null };
-
-                            if (newConfig.Email && newConfig.GlobalAPIKey) {
-                                CF_JSON.Email = newConfig.Email;
-                                CF_JSON.GlobalAPIKey = newConfig.GlobalAPIKey;
-                                CF_JSON.AccountID = null;
-                                CF_JSON.APIToken = null;
-                            } else if (newConfig.AccountID && newConfig.APIToken) {
-                                CF_JSON.Email = null;
-                                CF_JSON.GlobalAPIKey = null;
-                                CF_JSON.AccountID = newConfig.AccountID;
-                                CF_JSON.APIToken = newConfig.APIToken;
-                            } else {
-                                return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                            if (!newConfig.init || newConfig.init !== true) {
+                                if (newConfig.Email && newConfig.GlobalAPIKey) {
+                                    CF_JSON.Email = newConfig.Email;
+                                    CF_JSON.GlobalAPIKey = newConfig.GlobalAPIKey;
+                                    CF_JSON.AccountID = null;
+                                    CF_JSON.APIToken = null;
+                                } else if (newConfig.AccountID && newConfig.APIToken) {
+                                    CF_JSON.Email = null;
+                                    CF_JSON.GlobalAPIKey = null;
+                                    CF_JSON.AccountID = newConfig.AccountID;
+                                    CF_JSON.APIToken = newConfig.APIToken;
+                                } else {
+                                    return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                                }
                             }
 
                             // 保存到 KV
@@ -114,10 +128,13 @@ export default {
                     } else if (访问路径 === 'admin/tg.json') { // 保存tg.json配置
                         try {
                             const newConfig = await request.json();
-                            if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
-
-                            // 保存到 KV
-                            await env.KV.put('tg.json', JSON.stringify(newConfig, null, 2));
+                            if (newConfig.init && newConfig.init === true) {
+                                const TG_JSON = { BotToken: null, ChatID: null };
+                                await env.KV.put('tg.json', JSON.stringify(TG_JSON, null, 2));
+                            } else {
+                                if (!newConfig.BotToken || !newConfig.ChatID) return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
+                                await env.KV.put('tg.json', JSON.stringify(newConfig, null, 2));
+                            }
                             await 请求日志记录(env, request, 访问IP, 'Save_Config', config_JSON);
                             return new Response(JSON.stringify({ success: true, message: '配置已保存' }), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                         } catch (error) {
@@ -864,20 +881,46 @@ async function 整理成数组(内容) {
     return 地址数组;
 }
 
-async function 请求优选API(urls, 超时时间 = 3000) {
+async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) {
     if (!urls?.length) return [];
     const results = new Set();
     await Promise.allSettled(urls.map(async (url) => {
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 超时时间);
-            const text = await (await fetch(url, { signal: controller.signal })).text();
+            const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
+            // 处理编码问题：支持 UTF-8 和 GB2312 编码
+            let text = '';
+            try {
+                const buffer = await response.arrayBuffer();
+                const charset = (response.headers.get('content-type') || '').match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase() || '';
+                const decoders = charset.match(/gb/) ? ['gb2312', 'utf-8'] : ['utf-8', 'gb2312'];
+                for (const dec of decoders) {
+                    try {
+                        text = new TextDecoder(dec).decode(buffer);
+                        if (dec === 'utf-8' && (text.includes('�') || (text.length > 0 && /[\x80-\xFF]/.test(text) && !text.includes('中')))) continue;
+                        break;
+                    } catch { }
+                }
+            } catch { text = await response.text() }
             const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
             const isCSV = lines.length > 1 && lines[0].includes(',');
             const IPV6_PATTERN = /^[^\[\]]*:[^\[\]]*:[^\[\]]/;
             if (!isCSV) {
-                lines.forEach(line => results.add(line));
+                lines.forEach(line => {
+                    const hashIndex = line.indexOf('#');
+                    const [hostPart, remark] = hashIndex > -1 ? [line.substring(0, hashIndex), line.substring(hashIndex)] : [line, ''];
+                    let hasPort = false;
+                    if (hostPart.startsWith('[')) {
+                        hasPort = /\]:(\d+)$/.test(hostPart);
+                    } else {
+                        const colonIndex = hostPart.lastIndexOf(':');
+                        hasPort = colonIndex > -1 && /^\d+$/.test(hostPart.substring(colonIndex + 1));
+                    }
+                    const port = new URL(url).searchParams.get('port') || 默认端口;
+                    results.add(hasPort ? line : `${hostPart}:${port}${remark}`);
+                });
             } else {
                 const headers = lines[0].split(',').map(h => h.trim());
                 const dataLines = lines.slice(1);
@@ -894,7 +937,7 @@ async function 请求优选API(urls, 超时时间 = 3000) {
                     const ipIdx = headers.findIndex(h => h.includes('IP'));
                     const delayIdx = headers.findIndex(h => h.includes('延迟'));
                     const speedIdx = headers.findIndex(h => h.includes('下载速度'));
-                    const port = new URL(url).searchParams.get('port') || '443';
+                    const port = new URL(url).searchParams.get('port') || 默认端口;
                     dataLines.forEach(line => {
                         const cols = line.split(',').map(c => c.trim());
                         const wrappedIP = IPV6_PATTERN.test(cols[ipIdx]) ? `[${cols[ipIdx]}]` : cols[ipIdx];
