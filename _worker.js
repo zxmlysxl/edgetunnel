@@ -337,8 +337,8 @@ function handleConnection(ws, request, FIXED_UUID) {
         if (command === 2) { // 0x02 = UDP
             if (port === 53) {
                 isDns = true;
-                const vlessResponseHeader = new Uint8Array([bytes[0], 0]);
-                const { write } = await handleUDPOutBound(ws, vlessResponseHeader);
+                const 魏烈思响应头 = new Uint8Array([bytes[0], 0]);
+                const { write } = await handleUDPOutBound(ws, 魏烈思响应头);
                 udpStreamWrite = write;
                 if (payload.length) udpStreamWrite(payload);
                 return null; // UDP 不需要返回 socket
@@ -602,8 +602,8 @@ function parseAddress(bytes, offset, addrType) {
     return { host, length: endOffset };
 }
 
-async function handleUDPOutBound(webSocket, vlessResponseHeader) {
-    let isVlessHeaderSent = false;
+async function handleUDPOutBound(webSocket, 魏烈思响应头) {
+    let 是否已发送魏烈思响应头 = false;
     const transformStream = new TransformStream({
         start(controller) {},
         transform(chunk, controller) {
@@ -651,11 +651,11 @@ async function handleUDPOutBound(webSocket, vlessResponseHeader) {
                 console.log(`[UDP DNS] 响应域名: ${dnsQuery.domain || '未知'}, 答案: ${answers}, 响应时间: ${(performance.now() - startTime).toFixed(2)}ms`);
                 
                 if (webSocket.readyState === 1) { // WebSocket.OPEN
-                    if (isVlessHeaderSent) {
+                    if (是否已发送魏烈思响应头) {
                         webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
                     } else {
-                        webSocket.send(await new Blob([vlessResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
-                        isVlessHeaderSent = true;
+                        webSocket.send(await new Blob([魏烈思响应头, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                        是否已发送魏烈思响应头 = true;
                     }
                     // DNS 查询完成后关闭 WebSocket 连接
                     setTimeout(() => {
