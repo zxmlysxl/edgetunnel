@@ -316,6 +316,7 @@ function handleConnection(ws, request, FIXED_UUID) {
     let socket, writer, reader, info;
     let isFirstMsg = true, bytesReceived = 0, stallCount = 0, reconnectCount = 0;
     let lastData = Date.now();
+    let isDns = false, udpStreamWrite = null;
     const timers = {};
     const dataBuffer = [];
     const earlyDataHeader = request.headers.get("sec-websocket-protocol") || "";
@@ -324,12 +325,28 @@ function handleConnection(ws, request, FIXED_UUID) {
         ws.send(new Uint8Array([bytes[0], 0]));
         if (Array.from(bytes.slice(1, 17)).map(n => n.toString(16).padStart(2, '0')).join('').replace(/(.{8})(.{4})(.{4})(.{4})(.{12})/, '$1-$2-$3-$4-$5') !== FIXED_UUID) throw new Error('Auth failed');
         const offset1 = 18 + bytes[17] + 1;
+        const command = bytes[offset1 - 1]; // 获取命令字节: 0x01=TCP, 0x02=UDP, 0x03=MUX
         const port = (bytes[offset1] << 8) | bytes[offset1 + 1];
         const addrType = bytes[offset1 + 2];
         const offset2 = offset1 + 3;
         const addressType = addrType === 3 ? 4 : addrType === 2 ? 3 : 1;
         const { host, length } = parseAddress(bytes, offset2, addressType);
         const payload = bytes.slice(length);
+        
+        // 处理 UDP 请求
+        if (command === 2) { // 0x02 = UDP
+            if (port === 53) {
+                isDns = true;
+                const vlessResponseHeader = new Uint8Array([bytes[0], 0]);
+                const { write } = await handleUDPOutBound(ws, vlessResponseHeader);
+                udpStreamWrite = write;
+                if (payload.length) udpStreamWrite(payload);
+                return null; // UDP 不需要返回 socket
+            } else {
+                throw new Error('UDP proxy only enable for DNS which is port 53');
+            }
+        }
+        
         if (host.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
         const sock = await createConnection(host, port, addressType, 'V');
         await sock.opened;
@@ -523,13 +540,24 @@ function handleConnection(ws, request, FIXED_UUID) {
                 }
 
                 const bytes = new Uint8Array(firstData);
-                if (bytes.byteLength >= 58 && bytes[56] === 0x0d && bytes[57] === 0x0a) ({ socket, writer, reader, info } = await 处理木马握手(firstData));
-                else ({ socket, writer, reader, info } = await 处理魏烈思握手(firstData));
-                startTimers();
-                readLoop();
+                let result;
+                if (bytes.byteLength >= 58 && bytes[56] === 0x0d && bytes[57] === 0x0a) {
+                    result = await 处理木马握手(firstData);
+                } else {
+                    result = await 处理魏烈思握手(firstData);
+                }
+                
+                // 如果是 UDP DNS,result 为 null,不需要启动 TCP 相关逻辑
+                if (result) {
+                    ({ socket, writer, reader, info } = result);
+                    startTimers();
+                    readLoop();
+                }
             } else {
                 lastData = Date.now();
-                if (socket && writer) {
+                if (isDns && udpStreamWrite) {
+                    udpStreamWrite(evt.data);
+                } else if (socket && writer) {
                     await writer.write(evt.data);
                 } else {
                     dataBuffer.push(evt.data);
@@ -573,6 +601,203 @@ function parseAddress(bytes, offset, addrType) {
     }
     return { host, length: endOffset };
 }
+
+async function handleUDPOutBound(webSocket, vlessResponseHeader) {
+    let isVlessHeaderSent = false;
+    const transformStream = new TransformStream({
+        start(controller) {},
+        transform(chunk, controller) {
+            // 确保 chunk 是 Uint8Array
+            if (!(chunk instanceof Uint8Array)) {
+                chunk = new Uint8Array(chunk);
+            }
+            
+            // UDP 消息前 2 字节是 UDP 数据长度
+            for (let index = 0; index < chunk.byteLength;) {
+                // 直接从字节中读取长度，避免使用 DataView
+                const udpPacketLength = (chunk[index] << 8) | chunk[index + 1];
+                const udpData = new Uint8Array(
+                    chunk.slice(index + 2, index + 2 + udpPacketLength)
+                );
+                index = index + 2 + udpPacketLength;
+                controller.enqueue(udpData);
+            }
+        },
+        flush(controller) {}
+    });
+
+    // 只处理 DNS UDP 请求
+    transformStream.readable.pipeTo(new WritableStream({
+        async write(chunk) {
+            try {
+                const startTime = performance.now();
+                // 解析 DNS 查询域名
+                const dnsQuery = parseDNSQuery(chunk);
+                console.log(`[UDP DNS] 查询域名: ${dnsQuery.domain || '未知'}, 类型: ${dnsQuery.type}, 处理时间: ${(performance.now() - startTime).toFixed(2)}ms`);
+                const resp = await fetch('https://1.1.1.1/dns-query', {
+                    method: 'POST',
+                    headers: {
+                        'content-type': 'application/dns-message',
+                    },
+                    body: chunk,
+                });
+                const dnsQueryResult = await resp.arrayBuffer();
+                const udpSize = dnsQueryResult.byteLength;
+                const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
+                
+                // 解析 DNS 响应内容
+                const dnsResponse = parseDNSResponse(new Uint8Array(dnsQueryResult));
+                const answers = dnsResponse.answers.length > 0 ? dnsResponse.answers.join(', ') : '无记录';
+                console.log(`[UDP DNS] 响应域名: ${dnsQuery.domain || '未知'}, 答案: ${answers}, 响应时间: ${(performance.now() - startTime).toFixed(2)}ms`);
+                
+                if (webSocket.readyState === 1) { // WebSocket.OPEN
+                    if (isVlessHeaderSent) {
+                        webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                    } else {
+                        webSocket.send(await new Blob([vlessResponseHeader, udpSizeBuffer, dnsQueryResult]).arrayBuffer());
+                        isVlessHeaderSent = true;
+                    }
+                    // DNS 查询完成后关闭 WebSocket 连接
+                    setTimeout(() => {
+                        if (webSocket.readyState === 1) {
+                            webSocket.close(1000, 'DNS query completed');
+                            console.log(`[UDP DNS] 连接已关闭: ${dnsQuery.domain || '未知'}`);
+                        }
+                    }, 10); // 给一点时间让数据发送完成
+                }
+            } catch (error) {
+                console.error('DoH request failed:', error);
+                // 出错时也关闭连接
+                if (webSocket.readyState === 1) {
+                    webSocket.close(1000, 'DNS query failed');
+                }
+            }
+        }
+    })).catch((error) => {
+        console.error('DNS UDP error:', error);
+    });
+
+    const writer = transformStream.writable.getWriter();
+
+    return {
+        write(chunk) {
+            writer.write(chunk);
+        }
+    };
+}
+
+function parseDNSQuery(dnsPacket) {
+    try {
+        // 确保 dnsPacket 有 byteLength 属性
+        if (!dnsPacket || !dnsPacket.byteLength) {
+            return { domain: null, type: 'Invalid' };
+        }
+        
+        // DNS 头部是 12 字节
+        if (dnsPacket.byteLength < 12) return { domain: null, type: 'Invalid' };
+        
+        // 从第 12 字节开始是查询部分
+        let offset = 12;
+        const labels = [];
+        
+        // 解析域名标签
+        while (offset < dnsPacket.byteLength) {
+            const length = dnsPacket[offset];
+            if (length === 0) {
+                offset++;
+                break;
+            }
+            // 检查是否是指针 (压缩格式)
+            if ((length & 0xC0) === 0xC0) {
+                offset += 2;
+                break;
+            }
+            offset++;
+            if (offset + length > dnsPacket.byteLength) break;
+            
+            const label = new TextDecoder().decode(dnsPacket.slice(offset, offset + length));
+            labels.push(label);
+            offset += length;
+        }
+        
+        const domain = labels.join('.');
+        
+        // 查询类型在域名之后的 2 字节 (TYPE)
+        let queryType = 'Unknown';
+        if (offset + 2 <= dnsPacket.byteLength) {
+            const type = (dnsPacket[offset] << 8) | dnsPacket[offset + 1];
+            const types = { 1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 16: 'TXT', 28: 'AAAA', 33: 'SRV', 65: 'HTTPS' };
+            queryType = types[type] || `TYPE${type}`;
+        }
+        
+        return { domain: domain || null, type: queryType };
+    } catch (error) {
+        console.error('[UDP DNS] 解析 DNS 查询失败:', error);
+        return { domain: null, type: 'Error' };
+    }
+}
+
+function parseDNSResponse(dnsPacket) {
+    try {
+        if (!dnsPacket || dnsPacket.byteLength < 12) return { answers: [] };
+        const answerCount = (dnsPacket[6] << 8) | dnsPacket[7];
+        if (answerCount === 0) return { answers: [] };
+        
+        let offset = 12;
+        // 跳过查询部分
+        while (offset < dnsPacket.byteLength) {
+            const length = dnsPacket[offset];
+            if (length === 0) { offset += 5; break; }
+            if ((length & 0xC0) === 0xC0) { offset += 6; break; }
+            offset += 1 + length;
+        }
+        
+        const answers = [];
+        for (let i = 0; i < answerCount && offset < dnsPacket.byteLength; i++) {
+            try {
+                // 跳过 NAME
+                if ((dnsPacket[offset] & 0xC0) === 0xC0) offset += 2;
+                else { while (offset < dnsPacket.byteLength && dnsPacket[offset] !== 0) offset += 1 + dnsPacket[offset]; offset += 1; }
+                
+                if (offset + 10 > dnsPacket.byteLength) break;
+                const type = (dnsPacket[offset] << 8) | dnsPacket[offset + 1];
+                const dataLength = (dnsPacket[offset + 8] << 8) | dnsPacket[offset + 9];
+                offset += 10;
+                if (offset + dataLength > dnsPacket.byteLength) break;
+                
+                let answer = '';
+                if (type === 1 && dataLength === 4) answer = `${dnsPacket[offset]}.${dnsPacket[offset + 1]}.${dnsPacket[offset + 2]}.${dnsPacket[offset + 3]}`;
+                else if (type === 28 && dataLength === 16) answer = Array.from({ length: 8 }, (_, j) => ((dnsPacket[offset + j * 2] << 8) | dnsPacket[offset + j * 2 + 1]).toString(16)).join(':');
+                else if (type === 5 || type === 2 || type === 12) answer = parseDNSName(dnsPacket, offset);
+                else if (type === 16) answer = new TextDecoder().decode(dnsPacket.slice(offset + 1, offset + 1 + dnsPacket[offset]));
+                else answer = `TYPE${type}`;
+                
+                if (answer) answers.push(answer);
+                offset += dataLength;
+            } catch (e) { break; }
+        }
+        return { answers };
+    } catch (error) {
+        console.error('[UDP DNS] 解析 DNS 响应失败:', error);
+        return { answers: [] };
+    }
+}
+
+function parseDNSName(packet, offset) {
+    const labels = [];
+    let maxJumps = 5;
+    while (offset < packet.byteLength && maxJumps > 0) {
+        const length = packet[offset];
+        if (length === 0) break;
+        if ((length & 0xC0) === 0xC0) { offset = ((length & 0x3F) << 8) | packet[offset + 1]; maxJumps--; continue; }
+        offset++;
+        if (offset + length > packet.byteLength) break;
+        labels.push(new TextDecoder().decode(packet.slice(offset, offset + length)));
+        offset += length;
+    }
+    return labels.join('.');
+}
+
 ////////////////////////////////SOCKS5/HTTP函数///////////////////////////////////////////////
 async function httpConnect(addressRemote, portRemote) {
     const { username, password, hostname, port } = parsedSocks5Address;
