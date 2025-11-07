@@ -244,13 +244,13 @@ export default {
                                     节点端口 = match[2] || "443";  // 端口,默认443
                                     节点备注 = match[3] || 节点地址;  // 备注,默认为地址本身
                                 } else {
-                                    // 兜底处理:无法匹配时使用原始地址
-                                    节点地址 = 原始地址;
-                                    节点备注 = 原始地址;
+                                    // 不规范的格式，跳过处理返回null
+                                    console.warn(`[订阅内容] 不规范的IP格式已忽略: ${原始地址}`);
+                                    return null;
                                 }
 
                                 return `${协议类型}://${config_JSON.UUID}@${节点地址}:${节点端口}?security=tls&type=${config_JSON.传输协议}&host=${config_JSON.HOST}&sni=${config_JSON.HOST}&path=${encodeURIComponent(config_JSON.PATH)}&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
-                            }).join('\n');
+                            }).filter(item => item !== null).join('\n');
                             订阅内容 = btoa(订阅内容);
                         } else { // 优选订阅生成器
                             let 优选订阅生成器HOST = url.searchParams.get('sub') || config_JSON.优选订阅生成.SUB;
