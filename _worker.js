@@ -1509,7 +1509,7 @@ async function getCloudflareUsage(Email, GlobalAPIKey, AccountID, APIToken) {
     const cfg = { "Content-Type": "application/json" };
 
     try {
-        if (!AccountID && (!Email || !GlobalAPIKey)) throw new Error("请提供账户ID或API密钥");
+        if (!AccountID && (!Email || !GlobalAPIKey)) return { success: false, pages: 0, workers: 0, total: 0 };
 
         if (!AccountID) {
             const r = await fetch(`${API}/accounts`, {
