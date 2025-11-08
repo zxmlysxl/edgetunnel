@@ -2,7 +2,7 @@
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
-const KEEPALIVE = 15000, STALL_TIMEOUT = 8000, MAX_STALL = 12, MAX_RECONNECT = 24;
+const MAX_PENDING = 2097152, KEEPALIVE = 15000, STALL_TIMEOUT = 8000, MAX_STALL = 12, MAX_RECONNECT = 24;
 ///////////////////////////////////////////////////////主程序入口///////////////////////////////////////////////
 export default {
     async fetch(request, env) {
@@ -17,6 +17,7 @@ export default {
         const 访问IP = request.headers.get('X-Real-IP') || request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || request.headers.get('True-Client-IP') || request.headers.get('Fly-Client-IP') || request.headers.get('X-Appengine-Remote-Addr') || request.headers.get('X-Forwarded-For') || request.headers.get('X-Real-IP') || request.headers.get('X-Cluster-Client-IP') || request.cf?.clientTcpRtt || '未知IP';
         if (env.GO2SOCKS5) SOCKS5白名单 = await 整理成数组(env.GO2SOCKS5);
         if (!upgradeHeader || upgradeHeader !== 'websocket') {
+            if (url.protocol === 'http:') return Response.redirect(url.href.replace(`http://${url.hostname}`, `https://${url.hostname}`), 301);
             if (!管理员密码) return fetch(Pages静态页面 + '/noADMIN').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }); });
             if (!env.KV) return fetch(Pages静态页面 + '/noKV').then(r => { const headers = new Headers(r.headers); headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate'); headers.set('Pragma', 'no-cache'); headers.set('Expires', '0'); return new Response(r.body, { status: 404, statusText: r.statusText, headers }); });
             const 访问路径 = url.pathname.slice(1).toLowerCase();
@@ -313,14 +314,86 @@ export default {
     }
 };
 ///////////////////////////////////////////////////////////////////////WS传输数据///////////////////////////////////////////////
+// 内存池类 - 优化内存分配和回收
+class Pool {
+    constructor() {
+        this.buf = new ArrayBuffer(16384);
+        this.ptr = 0;
+        this.pool = [];
+        this.max = 8;
+        this.large = false;
+    }
+    alloc = s => {
+        if (s <= 4096 && s <= 16384 - this.ptr) {
+            const v = new Uint8Array(this.buf, this.ptr, s);
+            this.ptr += s;
+            return v;
+        }
+        const r = this.pool.pop();
+        if (r && r.byteLength >= s) return new Uint8Array(r.buffer, 0, s);
+        return new Uint8Array(s);
+    };
+    free = b => {
+        if (b.buffer === this.buf) {
+            this.ptr = Math.max(0, this.ptr - b.length);
+            return;
+        }
+        if (this.pool.length < this.max && b.byteLength >= 1024) this.pool.push(b);
+    };
+    enableLarge = () => { this.large = true; };
+    reset = () => { this.ptr = 0; this.pool.length = 0; this.large = false; };
+}
+
 function handleConnection(ws, request, FIXED_UUID) {
+    const pool = new Pool();
     let socket, writer, reader, info;
     let isFirstMsg = true, bytesReceived = 0, stallCount = 0, reconnectCount = 0;
     let lastData = Date.now();
     let isDns = false, udpStreamWrite = null;
     const timers = {};
     const dataBuffer = [];
+    let dataBufferBytes = 0;
     const earlyDataHeader = request.headers.get("sec-websocket-protocol") || "";
+
+    // 新增: 连接状态和性能监控变量
+    let isConnecting = false, isReading = false;
+    let score = 1.0, lastCheck = Date.now(), lastRxBytes = 0, successCount = 0, failCount = 0;
+    let stats = { total: 0, count: 0, bigChunks: 0, window: 0, timestamp: Date.now() };
+    let mode = 'direct', avgSize = 0, throughputs = [];
+
+    // 动态调整传输模式
+    const updateMode = size => {
+        stats.total += size;
+        stats.count++;
+        if (size > 8192) stats.bigChunks++;
+        avgSize = avgSize * 0.9 + size * 0.1;
+        const now = Date.now();
+
+        if (now - stats.timestamp > 1000) {
+            const rate = stats.window;
+            throughputs.push(rate);
+            if (throughputs.length > 5) throughputs.shift();
+            stats.window = size;
+            stats.timestamp = now;
+            const avg = throughputs.reduce((a, b) => a + b, 0) / throughputs.length;
+
+            if (stats.count >= 20) {
+                if (avg > 20971520 && avgSize > 16384) {
+                    if (mode !== 'buffered') {
+                        mode = 'buffered';
+                        pool.enableLarge();
+                    }
+                } else if (avg < 10485760 || avgSize < 8192) {
+                    if (mode !== 'direct') mode = 'direct';
+                } else {
+                    if (mode !== 'adaptive') mode = 'adaptive';
+                }
+            }
+        } else {
+            stats.window += size;
+        }
+    };
+
     async function 处理魏烈思握手(data) {
         const bytes = new Uint8Array(data);
         ws.send(new Uint8Array([bytes[0], 0]));
@@ -333,7 +406,7 @@ function handleConnection(ws, request, FIXED_UUID) {
         const addressType = addrType === 3 ? 4 : addrType === 2 ? 3 : 1;
         const { host, length } = parseAddress(bytes, offset2, addressType);
         const payload = bytes.slice(length);
-        
+
         // 处理 UDP 请求
         if (command === 2) { // 0x02 = UDP
             if (port === 53) {
@@ -347,7 +420,7 @@ function handleConnection(ws, request, FIXED_UUID) {
                 throw new Error('UDP proxy only enable for DNS which is port 53');
             }
         }
-        
+
         if (host.includes(atob('c3BlZWQuY2xvdWRmbGFyZS5jb20='))) throw new Error('Access');
         const sock = await createConnection(host, port, addressType, 'V');
         await sock.opened;
@@ -416,91 +489,207 @@ function handleConnection(ws, request, FIXED_UUID) {
     }
 
     async function readLoop() {
+        if (isReading) return;
+        isReading = true;
+        let batch = [], batchSize = 0, batchTimer = null;
+
+        // 批处理发送函数
+        const flush = () => {
+            if (!batchSize) return;
+            const merged = new Uint8Array(batchSize);
+            let pos = 0;
+            for (const chunk of batch) {
+                merged.set(chunk, pos);
+                pos += chunk.length;
+            }
+            if (ws.readyState === 1) ws.send(merged);
+            batch = [];
+            batchSize = 0;
+            if (batchTimer) {
+                clearTimeout(batchTimer);
+                batchTimer = null;
+            }
+        };
+
         try {
             while (true) {
+                // 背压控制
+                if (dataBufferBytes > MAX_PENDING) {
+                    await new Promise(res => setTimeout(res, 100));
+                    continue;
+                }
+
                 const { done, value } = await reader.read();
                 if (value?.length) {
                     bytesReceived += value.length;
                     lastData = Date.now();
-                    stallCount = reconnectCount = 0;
-                    if (ws.readyState === 1) {
-                        await ws.send(value);
-                        while (dataBuffer.length && ws.readyState === 1) {
-                            await ws.send(dataBuffer.shift());
+                    stallCount = 0;
+                    updateMode(value.length);
+
+                    // 定期更新网络评分
+                    const now = Date.now();
+                    if (now - lastCheck > 5000) {
+                        const elapsed = now - lastCheck;
+                        const bytes = bytesReceived - lastRxBytes;
+                        const throughput = bytes / elapsed;
+
+                        if (throughput > 500) score = Math.min(1.0, score + 0.05);
+                        else if (throughput < 50) score = Math.max(0.1, score - 0.05);
+
+                        lastCheck = now;
+                        lastRxBytes = bytesReceived;
+                    }
+
+                    // 根据模式选择发送策略
+                    if (mode === 'buffered') {
+                        if (value.length < 32768) {
+                            batch.push(value);
+                            batchSize += value.length;
+                            if (batchSize >= 131072) flush();
+                            else if (!batchTimer) batchTimer = setTimeout(flush, avgSize > 16384 ? 5 : 20);
+                        } else {
+                            flush();
+                            if (ws.readyState === 1) ws.send(value);
+                        }
+                    } else if (mode === 'adaptive') {
+                        if (value.length < 4096) {
+                            batch.push(value);
+                            batchSize += value.length;
+                            if (batchSize >= 32768) flush();
+                            else if (!batchTimer) batchTimer = setTimeout(flush, 15);
+                        } else {
+                            flush();
+                            if (ws.readyState === 1) ws.send(value);
                         }
                     } else {
-                        dataBuffer.push(value);
+                        flush();
+                        if (ws.readyState === 1) ws.send(value);
                     }
                 }
+
                 if (done) {
-                    console.log('Stream ended gracefully');
-                    await reconnect();
+                    flush();
+                    isReading = false;
+                    reconnect();
                     break;
                 }
             }
         } catch (err) {
-            console.error('Read error:', err.message);
-            if (err.message.includes('reset') || err.message.includes('broken')) {
-                console.log('Server closed connection, attempting reconnect');
-                await reconnect();
-            } else {
-                cleanup();
-                ws.close(1006, 'Connection abnormal');
-            }
+            flush();
+            if (batchTimer) clearTimeout(batchTimer);
+            isReading = false;
+            failCount++;
+            reconnect();
         }
     }
 
     async function reconnect() {
-        if (!info || ws.readyState !== 1 || reconnectCount >= MAX_RECONNECT) {
+        if (!info || ws.readyState !== 1) {
             cleanup();
-            ws.close(1011, 'Reconnection failed');
+            ws.close(1011, 'Invalid.');
             return;
         }
+        if (reconnectCount >= MAX_RECONNECT) {
+            cleanup();
+            ws.close(1011, 'Max reconnect.');
+            return;
+        }
+
+        // 基于网络质量评分的随机退出机制
+        if (score < 0.3 && reconnectCount > 5 && Math.random() > 0.6) {
+            cleanup();
+            ws.close(1011, 'Poor network.');
+            return;
+        }
+
+        if (isConnecting) return;
         reconnectCount++;
+
+        // 动态计算重连延迟
+        let delay = Math.min(50 * Math.pow(1.5, reconnectCount - 1), 3000);
+        delay *= (1.5 - score * 0.5);
+        delay += (Math.random() - 0.5) * delay * 0.2;
+        delay = Math.max(50, Math.floor(delay));
+
         console.log(`Reconnecting (attempt ${reconnectCount})...`);
         try {
             cleanupSocket();
-            await new Promise(resolve => setTimeout(resolve, 30 * Math.pow(2, reconnectCount) + Math.random() * 5));
-            const sock = connect({ hostname: info.host, port: info.port });
-            await sock.opened;
-            socket = sock;
-            writer = sock.writable.getWriter();
-            reader = sock.readable.getReader();
-            lastData = Date.now();
-            stallCount = 0;
-            console.log('Reconnected successfully');
-            while (dataBuffer.length && ws.readyState === 1) {
-                await writer.write(dataBuffer.shift());
+
+            // 背压控制: 清理过多缓冲数据
+            if (dataBufferBytes > MAX_PENDING * 2) {
+                while (dataBufferBytes > MAX_PENDING && dataBuffer.length > 5) {
+                    const drop = dataBuffer.shift();
+                    dataBufferBytes -= drop.length;
+                    pool.free(drop);
+                }
             }
+
+            await new Promise(res => setTimeout(res, delay));
+            isConnecting = true;
+            socket = connect({ hostname: info.host, port: info.port });
+            await socket.opened;
+
+            writer = socket.writable.getWriter();
+            reader = socket.readable.getReader();
+
+            // 发送缓冲数据 (限制数量防止阻塞)
+            const buffersToSend = dataBuffer.splice(0, 10);
+            for (const buf of buffersToSend) {
+                await writer.write(buf);
+                dataBufferBytes -= buf.length;
+                pool.free(buf);
+            }
+
+            isConnecting = false;
+            reconnectCount = 0;
+            score = Math.min(1.0, score + 0.15);
+            successCount++;
+            stallCount = 0;
+            lastData = Date.now();
             readLoop();
         } catch (err) {
-            console.error('Reconnect failed:', err.message);
-            setTimeout(reconnect, 1000);
+            isConnecting = false;
+            failCount++;
+            score = Math.max(0.1, score - 0.2);
+
+            if (reconnectCount < MAX_RECONNECT && ws.readyState === 1) setTimeout(reconnect, 500);
+            else {
+                cleanup();
+                ws.close(1011, 'Exhausted.');
+            }
         }
     }
 
     function startTimers() {
         timers.keepalive = setInterval(async () => {
-            if (Date.now() - lastData > KEEPALIVE) {
+            if (!isConnecting && writer && Date.now() - lastData > KEEPALIVE) {
                 try {
                     await writer.write(new Uint8Array(0));
                     lastData = Date.now();
                 } catch (e) {
-                    console.error('Keepalive failed:', e.message);
                     reconnect();
                 }
             }
         }, KEEPALIVE / 3);
+
         timers.health = setInterval(() => {
-            if (bytesReceived && Date.now() - lastData > STALL_TIMEOUT) {
+            if (!isConnecting && stats.total > 0 && Date.now() - lastData > STALL_TIMEOUT) {
                 stallCount++;
-                console.log(`Stall detected (${stallCount}/${MAX_STALL}), ${Date.now() - lastData}ms since last data`);
-                if (stallCount >= MAX_STALL) reconnect();
+                if (stallCount >= MAX_STALL) {
+                    if (reconnectCount < MAX_RECONNECT) {
+                        stallCount = 0;
+                        reconnect();
+                    } else {
+                        cleanup();
+                        ws.close(1011, 'Stall.');
+                    }
+                }
             }
         }, STALL_TIMEOUT / 2);
     }
 
     function cleanupSocket() {
+        isReading = false;
         try {
             writer?.releaseLock();
             reader?.releaseLock();
@@ -511,6 +700,13 @@ function handleConnection(ws, request, FIXED_UUID) {
     function cleanup() {
         Object.values(timers).forEach(clearInterval);
         cleanupSocket();
+        while (dataBuffer.length) pool.free(dataBuffer.shift());
+        dataBufferBytes = 0;
+        stats = { total: 0, count: 0, bigChunks: 0, window: 0, timestamp: Date.now() };
+        mode = 'direct';
+        avgSize = 0;
+        throughputs = [];
+        pool.reset();
     }
 
     // 处理 early data
@@ -547,7 +743,7 @@ function handleConnection(ws, request, FIXED_UUID) {
                 } else {
                     result = await 处理魏烈思握手(firstData);
                 }
-                
+
                 // 如果是 UDP DNS,result 为 null,不需要启动 TCP 相关逻辑
                 if (result) {
                     ({ socket, writer, reader, info } = result);
@@ -558,16 +754,19 @@ function handleConnection(ws, request, FIXED_UUID) {
                 lastData = Date.now();
                 if (isDns && udpStreamWrite) {
                     udpStreamWrite(evt.data);
-                } else if (socket && writer) {
-                    await writer.write(evt.data);
+                } else if (isConnecting || !writer) {
+                    // 使用内存池分配缓冲区
+                    const buf = pool.alloc(evt.data.byteLength);
+                    buf.set(new Uint8Array(evt.data));
+                    dataBuffer.push(buf);
+                    dataBufferBytes += buf.length;
                 } else {
-                    dataBuffer.push(evt.data);
+                    await writer.write(evt.data);
                 }
             }
         } catch (err) {
-            console.error('Connection error:', err.message);
             cleanup();
-            ws.close(1006, 'Connection abnormal');
+            ws.close(1006, 'Error.');
         }
     });
 
@@ -606,13 +805,13 @@ function parseAddress(bytes, offset, addrType) {
 async function handleUDPOutBound(webSocket, 魏烈思响应头) {
     let 是否已发送魏烈思响应头 = false;
     const transformStream = new TransformStream({
-        start(controller) {},
+        start(controller) { },
         transform(chunk, controller) {
             // 确保 chunk 是 Uint8Array
             if (!(chunk instanceof Uint8Array)) {
                 chunk = new Uint8Array(chunk);
             }
-            
+
             // UDP 消息前 2 字节是 UDP 数据长度
             for (let index = 0; index < chunk.byteLength;) {
                 // 直接从字节中读取长度，避免使用 DataView
@@ -624,7 +823,7 @@ async function handleUDPOutBound(webSocket, 魏烈思响应头) {
                 controller.enqueue(udpData);
             }
         },
-        flush(controller) {}
+        flush(controller) { }
     });
 
     // 只处理 DNS UDP 请求
@@ -645,12 +844,12 @@ async function handleUDPOutBound(webSocket, 魏烈思响应头) {
                 const dnsQueryResult = await resp.arrayBuffer();
                 const udpSize = dnsQueryResult.byteLength;
                 const udpSizeBuffer = new Uint8Array([(udpSize >> 8) & 0xff, udpSize & 0xff]);
-                
+
                 // 解析 DNS 响应内容
                 const dnsResponse = parseDNSResponse(new Uint8Array(dnsQueryResult));
                 const answers = dnsResponse.answers.length > 0 ? dnsResponse.answers.join(', ') : '无记录';
                 console.log(`[UDP DNS] 响应域名: ${dnsQuery.domain || '未知'}, 答案: ${answers}, 响应时间: ${(performance.now() - startTime).toFixed(2)}ms`);
-                
+
                 if (webSocket.readyState === 1) { // WebSocket.OPEN
                     if (是否已发送魏烈思响应头) {
                         webSocket.send(await new Blob([udpSizeBuffer, dnsQueryResult]).arrayBuffer());
@@ -693,14 +892,14 @@ function parseDNSQuery(dnsPacket) {
         if (!dnsPacket || !dnsPacket.byteLength) {
             return { domain: null, type: 'Invalid' };
         }
-        
+
         // DNS 头部是 12 字节
         if (dnsPacket.byteLength < 12) return { domain: null, type: 'Invalid' };
-        
+
         // 从第 12 字节开始是查询部分
         let offset = 12;
         const labels = [];
-        
+
         // 解析域名标签
         while (offset < dnsPacket.byteLength) {
             const length = dnsPacket[offset];
@@ -715,14 +914,14 @@ function parseDNSQuery(dnsPacket) {
             }
             offset++;
             if (offset + length > dnsPacket.byteLength) break;
-            
+
             const label = new TextDecoder().decode(dnsPacket.slice(offset, offset + length));
             labels.push(label);
             offset += length;
         }
-        
+
         const domain = labels.join('.');
-        
+
         // 查询类型在域名之后的 2 字节 (TYPE)
         let queryType = 'Unknown';
         if (offset + 2 <= dnsPacket.byteLength) {
@@ -730,7 +929,7 @@ function parseDNSQuery(dnsPacket) {
             const types = { 1: 'A', 2: 'NS', 5: 'CNAME', 6: 'SOA', 12: 'PTR', 15: 'MX', 16: 'TXT', 28: 'AAAA', 33: 'SRV', 65: 'HTTPS' };
             queryType = types[type] || `TYPE${type}`;
         }
-        
+
         return { domain: domain || null, type: queryType };
     } catch (error) {
         console.error('[UDP DNS] 解析 DNS 查询失败:', error);
@@ -743,7 +942,7 @@ function parseDNSResponse(dnsPacket) {
         if (!dnsPacket || dnsPacket.byteLength < 12) return { answers: [] };
         const answerCount = (dnsPacket[6] << 8) | dnsPacket[7];
         if (answerCount === 0) return { answers: [] };
-        
+
         let offset = 12;
         // 跳过查询部分
         while (offset < dnsPacket.byteLength) {
@@ -752,27 +951,27 @@ function parseDNSResponse(dnsPacket) {
             if ((length & 0xC0) === 0xC0) { offset += 6; break; }
             offset += 1 + length;
         }
-        
+
         const answers = [];
         for (let i = 0; i < answerCount && offset < dnsPacket.byteLength; i++) {
             try {
                 // 跳过 NAME
                 if ((dnsPacket[offset] & 0xC0) === 0xC0) offset += 2;
                 else { while (offset < dnsPacket.byteLength && dnsPacket[offset] !== 0) offset += 1 + dnsPacket[offset]; offset += 1; }
-                
+
                 if (offset + 10 > dnsPacket.byteLength) break;
                 const type = (dnsPacket[offset] << 8) | dnsPacket[offset + 1];
                 const dataLength = (dnsPacket[offset + 8] << 8) | dnsPacket[offset + 9];
                 offset += 10;
                 if (offset + dataLength > dnsPacket.byteLength) break;
-                
+
                 let answer = '';
                 if (type === 1 && dataLength === 4) answer = `${dnsPacket[offset]}.${dnsPacket[offset + 1]}.${dnsPacket[offset + 2]}.${dnsPacket[offset + 3]}`;
                 else if (type === 28 && dataLength === 16) answer = Array.from({ length: 8 }, (_, j) => ((dnsPacket[offset + j * 2] << 8) | dnsPacket[offset + j * 2 + 1]).toString(16)).join(':');
                 else if (type === 5 || type === 2 || type === 12) answer = parseDNSName(dnsPacket, offset);
                 else if (type === 16) answer = new TextDecoder().decode(dnsPacket.slice(offset + 1, offset + 1 + dnsPacket[offset]));
                 else answer = `TYPE${type}`;
-                
+
                 if (answer) answers.push(answer);
                 offset += dataLength;
             } catch (e) { break; }
