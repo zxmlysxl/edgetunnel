@@ -2,7 +2,12 @@
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
-const MAX_PENDING = 2097152, KEEPALIVE = 15000, STALL_TIMEOUT = 8000, MAX_STALL = 12, MAX_RECONNECT = 24;
+///////////////////////////////////////////////////////stallTCP参数///////////////////////////////////////////////
+const MAX_PENDING = 8 * 1024 * 1024,  // 最大缓冲大小（字节）：8MB，超过此值将触发背压控制，防止内存溢出
+    KEEPALIVE = 15000,           // 心跳保活间隔（毫秒）：15秒，定期向服务器发送空包保持连接活跃
+    STALL_TIMEOUT = 8000,        // 连接停滞检测超时（毫秒）：8秒，检测数据流是否中断
+    MAX_STALL = 12,              // 最大连续停滞次数：触发12次停滞后将重新连接（12 × 8秒 = 96秒）
+    MAX_RECONNECT = 24;          // 最大重连尝试次数：超过24次重连失败后关闭连接
 ///////////////////////////////////////////////////////主程序入口///////////////////////////////////////////////
 export default {
     async fetch(request, env) {
