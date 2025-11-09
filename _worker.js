@@ -224,7 +224,7 @@ export default {
                         const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量))[0] : await env.KV.get('ADD.txt') ? await 整理成数组(await env.KV.get('ADD.txt')) : (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量))[0];
                         const 优选API = [], 优选IP = [], 其他节点 = [];
                         for (const 元素 of 完整优选列表) {
-                            if (元素.toLowerCase().startsWith('https://') || 元素.toLowerCase().startsWith('http://')) 优选API.push(元素);
+                            if (元素.toLowerCase().startsWith('https://')) 优选API.push(元素);
                             else if (元素.toLowerCase().includes('://')) 其他节点.push(元素);
                             else 优选IP.push(元素);
                         }
