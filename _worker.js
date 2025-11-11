@@ -1359,20 +1359,51 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
             const timeoutId = setTimeout(() => controller.abort(), 超时时间);
             const response = await fetch(url, { signal: controller.signal });
             clearTimeout(timeoutId);
-            // 处理编码问题：支持 UTF-8 和 GB2312 编码
             let text = '';
             try {
                 const buffer = await response.arrayBuffer();
-                const charset = (response.headers.get('content-type') || '').match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase() || '';
-                const decoders = charset.match(/gb/) ? ['gb2312', 'utf-8'] : ['utf-8', 'gb2312'];
-                for (const dec of decoders) {
-                    try {
-                        text = new TextDecoder(dec).decode(buffer);
-                        if (dec === 'utf-8' && (text.includes('�') || (text.length > 0 && /[\x80-\xFF]/.test(text) && !text.includes('中')))) continue;
-                        break;
-                    } catch { }
+                const contentType = (response.headers.get('content-type') || '').toLowerCase();
+                const charset = contentType.match(/charset=([^\s;]+)/i)?.[1]?.toLowerCase() || '';
+                
+                // 根据 Content-Type 响应头判断编码优先级
+                let decoders = ['utf-8', 'gb2312']; // 默认优先 UTF-8
+                if (charset.includes('gb') || charset.includes('gbk') || charset.includes('gb2312')) {
+                    decoders = ['gb2312', 'utf-8']; // 如果明确指定 GB 系编码，优先尝试 GB2312
                 }
-            } catch { text = await response.text() }
+                
+                // 尝试多种编码解码
+                let decodeSuccess = false;
+                for (const decoder of decoders) {
+                    try {
+                        const decoded = new TextDecoder(decoder).decode(buffer);
+                        // 验证解码结果的有效性
+                        if (decoded && decoded.length > 0 && !decoded.includes('\ufffd')) {
+                            text = decoded;
+                            decodeSuccess = true;
+                            break;
+                        } else if (decoded && decoded.length > 0) {
+                            // 如果有替换字符 (U+FFFD)，说明编码不匹配，继续尝试下一个编码
+                            continue;
+                        }
+                    } catch (e) {
+                        // 该编码解码失败，尝试下一个
+                        continue;
+                    }
+                }
+                
+                // 如果所有编码都失败或无效，尝试 response.text()
+                if (!decodeSuccess) {
+                    text = await response.text();
+                }
+                
+                // 如果返回的是空或无效数据，返回
+                if (!text || text.trim().length === 0) {
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to decode response:', e);
+                return;
+            }
             const lines = text.trim().split('\n').map(l => l.trim()).filter(l => l);
             const isCSV = lines.length > 1 && lines[0].includes(',');
             const IPV6_PATTERN = /^[^\[\]]*:[^\[\]]*:[^\[\]]/;
