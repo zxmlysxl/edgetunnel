@@ -222,7 +222,7 @@ export default {
                     const 协议类型 = (url.searchParams.has('surge') || ua.includes('surge')) ? 'tro' + 'jan' : config_JSON.协议类型;
                     let 订阅内容 = '';
                     if (订阅类型 === 'mixed') {
-                        const 节点路径 = config_JSON.PATH + '?ed=2560';
+                        const 节点路径 = config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH;
                         const 完整优选列表 = config_JSON.优选订阅生成.本地IP库.随机IP ? (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量))[0] : await env.KV.get('ADD.txt') ? await 整理成数组(await env.KV.get('ADD.txt')) : (await 生成随机IP(request, config_JSON.优选订阅生成.本地IP库.随机数量))[0];
                         const 优选API = [], 优选IP = [], 其他节点 = [];
                         for (const 元素 of 完整优选列表) {
@@ -820,6 +820,7 @@ async function 读取config_JSON(env, host, userID, 重置配置 = false) {
         协议类型: "v" + "le" + "ss",
         传输协议: "ws",
         跳过证书验证: true,
+        启用0RTT: true,
         优选订阅生成: {
             local: true, // true: 基于本地的优选地址  false: 优选订阅生成器
             本地IP库: {
