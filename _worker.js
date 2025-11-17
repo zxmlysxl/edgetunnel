@@ -712,7 +712,6 @@ function surge(content, url, config_JSON) {
     let 输出内容 = "";
     for (let x of 每行内容) {
         if (x.includes('= tro' + 'jan,')) {
-            console.log(x);
             const host = x.split("sni=")[1].split(",")[0];
             const 备改内容 = `sni=${host}, skip-cert-verify=${config_JSON.跳过证书验证}`;
             const 正确内容 = `sni=${host}, skip-cert-verify=${config_JSON.跳过证书验证}, ws=true, ws-path=${config_JSON.PATH}, ws-headers=Host:"${host}"`;
@@ -1269,7 +1268,6 @@ async function 解析地址端口(proxyIP) {
         地址 = proxyIP.slice(0, colonIndex);
         端口 = parseInt(proxyIP.slice(colonIndex + 1), 10) || 端口;
     }
-    console.log(`使用反代${地址}:${端口}`);
     return [地址, 端口];
 }
 
