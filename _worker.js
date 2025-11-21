@@ -29,7 +29,7 @@ export default {
             const 区分大小写访问路径 = url.pathname.slice(1);
             if (访问路径 === 加密秘钥 && 加密秘钥 !== '勿动此默认密钥，有需求请自行通过添加变量KEY进行修改') {//快速订阅
                 const params = new URLSearchParams(url.search);
-                params.set('token', await MD5MD5(url.host + userID));
+                params.set('token', await MD5MD5(host + userID));
                 return new Response('重定向中...', { status: 302, headers: { 'Location': `/sub?${params.toString()}` } });
             } else if (访问路径 === 'login') {//处理登录页面和登录请求
                 const cookies = request.headers.get('Cookie') || '';
@@ -187,7 +187,7 @@ export default {
                 响应.headers.set('Set-Cookie', 'auth=; Path=/; Max-Age=0; HttpOnly');
                 return 响应;
             } else if (访问路径 === 'sub') {//处理订阅请求
-                const 订阅TOKEN = await MD5MD5(url.host + userID);
+                const 订阅TOKEN = await MD5MD5(host + userID);
                 if (url.searchParams.get('token') === 订阅TOKEN) {
                     config_JSON = await 读取config_JSON(env, host, userID);
                     await 请求日志记录(env, request, 访问IP, 'Get_SUB', config_JSON);
