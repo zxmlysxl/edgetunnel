@@ -14,6 +14,7 @@ export default {
         const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$/;
         const envUUID = env.UUID || env.uuid;
         const userID = (envUUID && uuidRegex.test(envUUID)) ? envUUID.toLowerCase() : [userIDMD5.slice(0, 8), userIDMD5.slice(8, 12), '4' + userIDMD5.slice(13, 16), userIDMD5.slice(16, 20), userIDMD5.slice(20)].join('-');
+        const host = env.HOST ? env.HOST.toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0] : url.hostname;
         if (env.PROXYIP) {
             const proxyIPs = await 整理成数组(env.PROXYIP);
             反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
@@ -87,11 +88,11 @@ export default {
                     return new Response(JSON.stringify(检测代理响应, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                 }
 
-                config_JSON = await 读取config_JSON(env, url.host, userID);
+                config_JSON = await 读取config_JSON(env, host, userID);
 
                 if (访问路径 === 'admin/init') {// 重置配置为默认值
                     try {
-                        config_JSON = await 读取config_JSON(env, url.host, userID, true);
+                        config_JSON = await 读取config_JSON(env, host, userID, true);
                         await 请求日志记录(env, request, 访问IP, 'Init_Config', config_JSON);
                         config_JSON.init = '配置已重置为默认值';
                         return new Response(JSON.stringify(config_JSON, null, 2), { status: 200, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
@@ -188,7 +189,7 @@ export default {
             } else if (访问路径 === 'sub') {//处理订阅请求
                 const 订阅TOKEN = await MD5MD5(url.host + userID);
                 if (url.searchParams.get('token') === 订阅TOKEN) {
-                    config_JSON = await 读取config_JSON(env, url.host, userID);
+                    config_JSON = await 读取config_JSON(env, host, userID);
                     await 请求日志记录(env, request, 访问IP, 'Get_SUB', config_JSON);
                     const ua = UA.toLowerCase();
                     const expire = 4102329600;//2099-12-31 到期时间
