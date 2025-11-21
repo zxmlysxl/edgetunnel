@@ -260,7 +260,7 @@ export default {
                                     console.warn(`[订阅内容] 不规范的IP格式已忽略: ${原始地址}`);
                                     return null;
                                 }
-                                const 节点HOST = 随机替换通配符(config_JSON.HOST);
+                                const 节点HOST = 随机替换通配符(host);
                                 return `${协议类型}://${config_JSON.UUID}@${节点地址}:${节点端口}?security=tls&type=${config_JSON.传输协议}&host=${节点HOST}&sni=${节点HOST}&path=${encodeURIComponent((随机路径() + 节点路径).replace('/?', '?')) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
                             }).filter(item => item !== null).join('\n');
                             订阅内容 = btoa(其他节点LINK + 订阅内容);
@@ -289,9 +289,9 @@ export default {
                         }
                     }
                     if (订阅类型 === 'mixed') {
-                        订阅内容 = atob(订阅内容).replace(/example.com/g, 随机替换通配符(config_JSON.HOST)).replace(/00000000-0000-4000-0000-000000000000/g, config_JSON.UUID);
+                        订阅内容 = atob(订阅内容).replace(/example.com/g, config_JSON.HOST).replace(/00000000-0000-4000-0000-000000000000/g, config_JSON.UUID);
                         if (!ua.includes('mozilla')) 订阅内容 = btoa(订阅内容);
-                    } else 订阅内容 = 订阅内容.replace(/example.com/g, 随机替换通配符(config_JSON.HOST)).replace(/00000000-0000-4000-0000-000000000000/g, config_JSON.UUID);
+                    } else 订阅内容 = 订阅内容.replace(/example.com/g, config_JSON.HOST).replace(/00000000-0000-4000-0000-000000000000/g, config_JSON.UUID);
                     if (订阅类型 === 'singbox') {
                         订阅内容 = JSON.stringify(JSON.parse(订阅内容), null, 2);
                         responseHeaders["content-type"] = 'application/json; charset=utf-8';
@@ -829,7 +829,7 @@ function 随机替换通配符(h) {
     const 字符集 = 'abcdefghijklmnopqrstuvwxyz0123456789';
     return h.replace(/\*/g, () => {
         let s = '';
-        for (let i = 0; i < Math.floor(Math.random() * 14) + 3; i++) 
+        for (let i = 0; i < Math.floor(Math.random() * 14) + 3; i++)
             s += 字符集[Math.floor(Math.random() * 36)];
         return s;
     });
