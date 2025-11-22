@@ -708,12 +708,7 @@ async function httpConnect(targetHost, targetPort, initialData) {
 }
 //////////////////////////////////////////////////功能性函数///////////////////////////////////////////////
 function surge(content, url, config_JSON) {
-    let 每行内容;
-    if (content.includes('\r\n')) {
-        每行内容 = content.split('\r\n');
-    } else {
-        每行内容 = content.split('\n');
-    }
+    const 每行内容 = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
 
     let 输出内容 = "";
     for (let x of 每行内容) {
@@ -730,6 +725,7 @@ function surge(content, url, config_JSON) {
     输出内容 = `#!MANAGED-CONFIG ${url} interval=${config_JSON.优选订阅生成.SUBUpdateTime * 60 * 60} strict=false` + 输出内容.substring(输出内容.indexOf('\n'));
     return 输出内容;
 }
+
 async function 请求日志记录(env, request, 访问IP, 请求类型 = "Get_SUB", config_JSON) {
     const KV容量限制 = 4;//MB
     try {
