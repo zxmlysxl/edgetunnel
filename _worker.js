@@ -267,7 +267,7 @@ export default {
                         } else { // 优选订阅生成器
                             let 优选订阅生成器HOST = url.searchParams.get('sub') || config_JSON.优选订阅生成.SUB;
                             优选订阅生成器HOST = 优选订阅生成器HOST && !/^https?:\/\//i.test(优选订阅生成器HOST) ? `https://${优选订阅生成器HOST}` : 优选订阅生成器HOST;
-                            const 优选订阅生成器URL = `${优选订阅生成器HOST}/sub?host=example.com&${协议类型 === ('v' + 'le' + 'ss') ? 'uuid' : 'pw'}=00000000-0000-4000-0000-000000000000&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&type=${config_JSON.传输协议}`;
+                            const 优选订阅生成器URL = `${优选订阅生成器HOST}/sub?host=example.com&${协议类型 === ('v' + 'le' + 'ss') ? 'uuid' : 'pw'}=00000000-0000-4000-8000-000000000000&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&type=${config_JSON.传输协议}`;
                             try {
                                 const response = await fetch(优选订阅生成器URL, { headers: { 'User-Agent': 'v2rayN/edge' + 'tunnel (https://github.com/cmliu/edge' + 'tunnel)' } });
                                 if (response.ok) 订阅内容 = btoa(其他节点LINK + atob(await response.text()));
@@ -289,9 +289,9 @@ export default {
                         }
                     }
                     if (订阅类型 === 'mixed') {
-                        订阅内容 = atob(订阅内容).replace(/example.com/g, config_JSON.HOST).replace(/00000000-0000-4000-0000-000000000000/g, config_JSON.UUID);
+                        订阅内容 = 批量替换域名(atob(订阅内容).replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), host);
                         if (!ua.includes('mozilla')) 订阅内容 = btoa(订阅内容);
-                    } else 订阅内容 = 订阅内容.replace(/example.com/g, config_JSON.HOST).replace(/00000000-0000-4000-0000-000000000000/g, config_JSON.UUID);
+                    } else 订阅内容 = 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), host);
                     if (订阅类型 === 'singbox') {
                         订阅内容 = JSON.stringify(JSON.parse(订阅内容), null, 2);
                         responseHeaders["content-type"] = 'application/json; charset=utf-8';
@@ -832,6 +832,15 @@ function 随机替换通配符(h) {
         for (let i = 0; i < Math.floor(Math.random() * 14) + 3; i++)
             s += 字符集[Math.floor(Math.random() * 36)];
         return s;
+    });
+}
+
+function 批量替换域名(内容, host, 每组数量 = 2) {
+    let count = 0, currentRandomHost = null;
+    return 内容.replace(/example\.com/g, () => {
+        if (count % 每组数量 === 0) currentRandomHost = 随机替换通配符(host);
+        count++;
+        return currentRandomHost;
     });
 }
 
