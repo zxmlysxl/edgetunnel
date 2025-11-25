@@ -1064,8 +1064,10 @@ async function 请求优选API(urls, 默认端口 = '443', 超时时间 = 3000) 
                     const ipIdx = headers.indexOf('IP地址'), portIdx = headers.indexOf('端口');
                     const remarkIdx = headers.indexOf('国家') > -1 ? headers.indexOf('国家') :
                         headers.indexOf('城市') > -1 ? headers.indexOf('城市') : headers.indexOf('数据中心');
+                    const tlsIdx = headers.indexOf('TLS');
                     dataLines.forEach(line => {
                         const cols = line.split(',').map(c => c.trim());
+                        if (tlsIdx !== -1 && cols[tlsIdx]?.toLowerCase() !== 'true') return;
                         const wrappedIP = IPV6_PATTERN.test(cols[ipIdx]) ? `[${cols[ipIdx]}]` : cols[ipIdx];
                         results.add(`${wrappedIP}:${cols[portIdx]}#${cols[remarkIdx]}`);
                     });
