@@ -305,7 +305,7 @@ export default {
                         }
                     }
 
-                    if (!ua.includes('subconverter')) 订阅内容 = 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), host)
+                    if (!ua.includes('subconverter')) 订阅内容 = 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), hosts)
 
                     if (!ua.includes('mozilla') && 订阅类型 === 'mixed') 订阅内容 = btoa(订阅内容);
 
@@ -848,10 +848,10 @@ function 随机替换通配符(h) {
     });
 }
 
-function 批量替换域名(内容, host, 每组数量 = 2) {
+function 批量替换域名(内容, hosts, 每组数量 = 2) {
     let count = 0, currentRandomHost = null;
     return 内容.replace(/example\.com/g, () => {
-        if (count % 每组数量 === 0) currentRandomHost = 随机替换通配符(host);
+        if (count % 每组数量 === 0) currentRandomHost = 随机替换通配符(hosts[Math.floor(Math.random() * hosts.length)]);
         count++;
         return currentRandomHost;
     });
