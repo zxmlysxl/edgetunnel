@@ -118,7 +118,7 @@
 |--------|---------|-|-----|
 | ADMIN | `123456` |✅| 面板登录密码 |
 | KEY | `CMLiussss` |❌| 快速订阅密钥，访问`/CMLiussss`即可快读订阅。 |
-| HOST | `edt-pages.github.io` |❌| 强制固定伪装域名 |
+| HOST | `edt-pages.github.io` |❌| 强制固定伪装域名(支持多元素，使用`换行符`或`,`做间隔) |
 | UUID | `90cd4a77-141a-43c9-991b-08263cfe9c10` |❌| 强制固定UUID |
 | PATH | `/` |❌| 强制固定路径 |
 | PROXYIP | `proxyip.cmliussss.net:443` |❌| 更换默认内置PROXYIP |
