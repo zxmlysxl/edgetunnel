@@ -305,7 +305,7 @@ export default {
                         }
                     }
 
-                    if (!ua.includes('subconverter')) 订阅内容 = 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), hosts)
+                    if (!ua.includes('subconverter')) 订阅内容 = 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), config_JSON.HOSTS)
 
                     if (!ua.includes('mozilla') && 订阅类型 === 'mixed') 订阅内容 = btoa(订阅内容);
 
@@ -858,11 +858,13 @@ function 批量替换域名(内容, hosts, 每组数量 = 2) {
 }
 
 async function 读取config_JSON(env, hostname, userID, path, 重置配置 = false) {
-    const host = 随机替换通配符(hostname);
+    //const host = 随机替换通配符(hostname);
+    const host = hostname;
     const 初始化开始时间 = performance.now();
     const 默认配置JSON = {
         TIME: new Date().toISOString(),
         HOST: host,
+        HOSTS: [hostname],
         UUID: userID,
         协议类型: "v" + "le" + "ss",
         传输协议: "ws",
@@ -929,6 +931,8 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     }
 
     config_JSON.HOST = host;
+    if (!config_JSON.HOSTS) config_JSON.HOSTS = [hostname];
+    if (env.HOST) config_JSON.HOSTS = (await 整理成数组(env.HOST)).map(h => h.toLowerCase().replace(/^https?:\/\//, '').split('/')[0].split(':')[0]);
     config_JSON.UUID = userID;
     config_JSON.PATH = path ? (path.startsWith('/') ? path : '/' + path) : (config_JSON.反代.SOCKS5.启用 ? ('/' + config_JSON.反代.SOCKS5.启用 + (config_JSON.反代.SOCKS5.全局 ? '://' : '=') + config_JSON.反代.SOCKS5.账号) : (config_JSON.反代.PROXYIP === 'auto' ? '/' : `/proxyip=${config_JSON.反代.PROXYIP}`));
     const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
