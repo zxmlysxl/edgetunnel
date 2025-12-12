@@ -519,7 +519,8 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
         connectStreams(newSocket, ws, respHeader, null);
     }
 
-    if (启用SOCKS5反代 && 启用SOCKS5全局反代) {
+    const 验证SOCKS5白名单 = (addr) => SOCKS5白名单.some(p => new RegExp(`^${p.replace(/\*/g, '.*')}$`, 'i').test(addr));
+    if (启用SOCKS5反代 && (启用SOCKS5全局反代 || 验证SOCKS5白名单(host))) {
         try {
             await connecttoPry();
         } catch (err) {
