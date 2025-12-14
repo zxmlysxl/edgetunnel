@@ -502,7 +502,10 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
     async function connectDirect(address, port, data, 所有反代数组 = null) {
         let remoteSock;
         if (所有反代数组 && 所有反代数组.length > 0) {
-            for (const [反代地址, 反代端口] of 所有反代数组) {
+            const 打乱后数组 = [...所有反代数组].sort(() => Math.random() - 0.5);
+            const 最大尝试次数 = Math.min(8, 打乱后数组.length);
+            for (let i = 0; i < 最大尝试次数; i++) {
+                const [反代地址, 反代端口] = 打乱后数组[i];
                 try {
                     remoteSock = connect({ hostname: 反代地址, port: 反代端口 });
                     const testWriter = remoteSock.writable.getWriter();
