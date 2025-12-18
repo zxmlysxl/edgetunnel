@@ -749,11 +749,12 @@ function surge(content, url, config_JSON) {
     const 每行内容 = content.includes('\r\n') ? content.split('\r\n') : content.split('\n');
 
     let 输出内容 = "";
+	let realSurgePath = config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH;
     for (let x of 每行内容) {
         if (x.includes('= tro' + 'jan,')) {
             const host = x.split("sni=")[1].split(",")[0];
             const 备改内容 = `sni=${host}, skip-cert-verify=${config_JSON.跳过证书验证}`;
-            const 正确内容 = `sni=${host}, skip-cert-verify=${config_JSON.跳过证书验证}, ws=true, ws-path=${config_JSON.PATH}, ws-headers=Host:"${host}"`;
+            const 正确内容 = `sni=${host}, skip-cert-verify=${config_JSON.跳过证书验证}, ws=true, ws-path=${realSurgePath}, ws-headers=Host:"${host}"`;
             输出内容 += x.replace(new RegExp(备改内容, 'g'), 正确内容).replace("[", "").replace("]", "") + '\n';
         } else {
             输出内容 += x + '\n';
@@ -1541,3 +1542,4 @@ async function html1101(host, 访问IP) {
 </body>
 </html>`;
 }
+
