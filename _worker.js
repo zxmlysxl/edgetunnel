@@ -870,9 +870,10 @@ function 随机替换通配符(h) {
 }
 
 function 批量替换域名(内容, hosts, 每组数量 = 2) {
+    const 打乱后数组 = [...hosts].sort(() => Math.random() - 0.5);
     let count = 0, currentRandomHost = null;
     return 内容.replace(/example\.com/g, () => {
-        if (count % 每组数量 === 0) currentRandomHost = 随机替换通配符(hosts[Math.floor(Math.random() * hosts.length)]);
+        if (count % 每组数量 === 0) currentRandomHost = 随机替换通配符(打乱后数组[count % 打乱后数组.length]);
         count++;
         return currentRandomHost;
     });
