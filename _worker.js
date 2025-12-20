@@ -1,6 +1,6 @@
 ﻿import { connect } from "cloudflare:sockets";
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
-let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
+let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'], 反代数组索引 = 0;
 const Pages静态页面 = 'https://edt-pages.github.io';
 ///////////////////////////////////////////////////////主程序入口///////////////////////////////////////////////
 export default {
@@ -502,10 +502,9 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
     async function connectDirect(address, port, data, 所有反代数组 = null) {
         let remoteSock;
         if (所有反代数组 && 所有反代数组.length > 0) {
-            const 打乱后数组 = [...所有反代数组].sort(() => Math.random() - 0.5);
-            const 最大尝试次数 = Math.min(8, 打乱后数组.length);
-            for (let i = 0; i < 最大尝试次数; i++) {
-                const [反代地址, 反代端口] = 打乱后数组[i];
+            const 最大尝试次数 = 反代数组索引 + 8;
+            for (; 反代数组索引 < 最大尝试次数; 反代数组索引++) {
+                const [反代地址, 反代端口] = 所有反代数组[反代数组索引];
                 try {
                     remoteSock = connect({ hostname: 反代地址, port: 反代端口 });
                     const testWriter = remoteSock.writable.getWriter();
@@ -1389,8 +1388,8 @@ async function 解析地址端口(proxyIP) {
             所有反代数组 = [[地址, 端口]];
         }
     }
-
-    return 所有反代数组;
+    const 排序后数组 = 所有反代数组.sort((a, b) => a[0].localeCompare(b[0]));
+    return 排序后数组;
     // low
     const [选中地址, 选中端口] = 所有反代数组[Math.floor(Math.random() * 所有反代数组.length)];
     return [选中地址, 选中端口];
