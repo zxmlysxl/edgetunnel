@@ -382,7 +382,7 @@ async function 处理WS请求(request, yourUUID) {
             if (判断是否是木马) {
                 const { port, hostname, rawClientData } = 解析木马请求(chunk, yourUUID);
                 if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
-                await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper);
+                await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper, yourUUID);
             } else {
                 const { port, hostname, rawIndex, version, isUDP } = 解析魏烈思请求(chunk, yourUUID);
                 if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
@@ -393,7 +393,7 @@ async function 处理WS请求(request, yourUUID) {
                 const respHeader = new Uint8Array([version[0], 0]);
                 const rawData = chunk.slice(rawIndex);
                 if (isDnsQuery) return forwardataudp(rawData, serverSock, respHeader);
-                await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper);
+                await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper, yourUUID);
             }
         },
     })).catch((err) => {
@@ -497,7 +497,7 @@ function 解析魏烈思请求(chunk, token) {
     if (!hostname) return { hasError: true, message: `Invalid address: ${addressType}` };
     return { hasError: false, addressType, port, hostname, isUDP, rawIndex: addrValIdx + addrLen, version };
 }
-async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper) {
+async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, 排序秘钥) {
     console.log(JSON.stringify({ configJSON: { 目标地址: host, 目标端口: portNum, 反代IP: 反代IP, 代理类型: 启用SOCKS5反代, 全局代理: 启用SOCKS5全局反代, 代理账号: 我的SOCKS5账号 } }));
     async function connectDirect(address, port, data, 所有反代数组 = null) {
         let remoteSock;
@@ -530,7 +530,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
         } else if (启用SOCKS5反代 === 'http' || 启用SOCKS5反代 === 'https') {
             newSocket = await httpConnect(host, portNum, rawData);
         } else {
-            const 所有反代数组 = await 解析地址端口(反代IP);
+            const 所有反代数组 = await 解析地址端口(反代IP, 排序秘钥);
             newSocket = await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, rawData, 所有反代数组);
         }
         remoteConnWrapper.socket = newSocket;
@@ -1313,7 +1313,7 @@ function sha224(s) {
     return hex;
 }
 
-async function 解析地址端口(proxyIP) {
+async function 解析地址端口(proxyIP, 排序秘钥 = '9e2d28f7-8c1f-4965-a3d9-28f1cf4beff4') {
     proxyIP = proxyIP.toLowerCase();
     async function DoH查询(域名, 记录类型) {
         try {
@@ -1389,7 +1389,38 @@ async function 解析地址端口(proxyIP) {
         }
     }
     const 排序后数组 = 所有反代数组.sort((a, b) => a[0].localeCompare(b[0]));
-    return 排序后数组;
+    // return 排序后数组;
+
+    // 基于种子的确定性洗牌算法 (Fisher-Yates with seeded PRNG)
+    function 种子随机数生成器(seed) {
+        // 将字符串种子转换为数字哈希
+        let hash = 0;
+        for (let i = 0; i < seed.length; i++) {
+            const char = seed.charCodeAt(i);
+            hash = ((hash << 5) - hash) + char;
+            hash = hash & hash; // 转换为32位整数
+        }
+        // 使用简单的线性同余生成器 (LCG)
+        return function () {
+            hash = (hash * 1103515245 + 12345) & 0x7fffffff;
+            return hash / 0x7fffffff;
+        };
+    }
+
+    function 确定性洗牌(数组, 种子) {
+        const 结果数组 = [...数组]; // 创建副本避免修改原数组
+        const 随机 = 种子随机数生成器(种子);
+        // Fisher-Yates 洗牌算法
+        for (let i = 结果数组.length - 1; i > 0; i--) {
+            const j = Math.floor(随机() * (i + 1));
+            [结果数组[i], 结果数组[j]] = [结果数组[j], 结果数组[i]];
+        }
+        return 结果数组;
+    }
+
+    const 特殊排序后数组 = 确定性洗牌(排序后数组, 排序秘钥);
+    return 特殊排序后数组;
+
     // low
     const [选中地址, 选中端口] = 所有反代数组[Math.floor(Math.random() * 所有反代数组.length)];
     return [选中地址, 选中端口];
