@@ -383,7 +383,7 @@ async function 处理WS请求(request, yourUUID) {
             if (判断是否是木马) {
                 const { port, hostname, rawClientData } = 解析木马请求(chunk, yourUUID);
                 if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
-                await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper, yourUUID);
+                await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper);
             } else {
                 const { port, hostname, rawIndex, version, isUDP } = 解析魏烈思请求(chunk, yourUUID);
                 if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
@@ -394,7 +394,7 @@ async function 处理WS请求(request, yourUUID) {
                 const respHeader = new Uint8Array([version[0], 0]);
                 const rawData = chunk.slice(rawIndex);
                 if (isDnsQuery) return forwardataudp(rawData, serverSock, respHeader);
-                await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper, yourUUID);
+                await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper);
             }
         },
     })).catch((err) => {
@@ -498,7 +498,7 @@ function 解析魏烈思请求(chunk, token) {
     if (!hostname) return { hasError: true, message: `Invalid address: ${addressType}` };
     return { hasError: false, addressType, port, hostname, isUDP, rawIndex: addrValIdx + addrLen, version };
 }
-async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, 排序秘钥) {
+async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper) {
     console.log(`[TCP转发] 目标: ${host}:${portNum} | 反代IP: ${反代IP} | 反代类型: ${启用SOCKS5反代 || 'proxyip'} | 全局: ${启用SOCKS5全局反代 ? '是' : '否'}`);
     async function connectDirect(address, port, data, 所有反代数组 = null) {
         let remoteSock;
@@ -539,7 +539,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
         } else if (启用SOCKS5反代 === 'http' || 启用SOCKS5反代 === 'https') {
             newSocket = await httpConnect(host, portNum, rawData);
         } else {
-            const 所有反代数组 = await 解析地址端口(反代IP, 排序秘钥);
+            const 所有反代数组 = await 解析地址端口(反代IP);
             newSocket = await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, rawData, 所有反代数组);
         }
         remoteConnWrapper.socket = newSocket;
