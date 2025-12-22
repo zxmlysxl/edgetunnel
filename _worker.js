@@ -1,6 +1,6 @@
 ﻿import { connect } from "cloudflare:sockets";
 let config_JSON, 反代IP = '', 启用SOCKS5反代 = null, 启用SOCKS5全局反代 = false, 我的SOCKS5账号 = '', parsedSocks5Address = {};
-let 缓存反代IP, 缓存反代解析数组, 缓存反代数组索引 = 0;
+let 缓存反代IP, 缓存反代解析数组, 缓存反代数组索引 = 0, 启用反代兜底 = true;
 let SOCKS5白名单 = ['*tapecontent.net', '*cloudatacdn.com', '*loadshare.org', '*cdn-centaurus.com', 'scholar.google.com'];
 const Pages静态页面 = 'https://edt-pages.github.io';
 ///////////////////////////////////////////////////////主程序入口///////////////////////////////////////////////
@@ -20,6 +20,7 @@ export default {
         if (env.PROXYIP) {
             const proxyIPs = await 整理成数组(env.PROXYIP);
             反代IP = proxyIPs[Math.floor(Math.random() * proxyIPs.length)];
+            启用反代兜底 = false;
         } else 反代IP = (request.cf.colo + '.PrOxYIp.CmLiUsSsS.nEt').toLowerCase();
         const 访问IP = request.headers.get('X-Real-IP') || request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || request.headers.get('True-Client-IP') || request.headers.get('Fly-Client-IP') || request.headers.get('X-Appengine-Remote-Addr') || request.headers.get('X-Forwarded-For') || request.headers.get('X-Real-IP') || request.headers.get('X-Cluster-Client-IP') || request.cf?.clientTcpRtt || '未知IP';
         if (env.GO2SOCKS5) SOCKS5白名单 = await 整理成数组(env.GO2SOCKS5);
@@ -503,8 +504,9 @@ function 解析魏烈思请求(chunk, token) {
     return { hasError: false, addressType, port, hostname, isUDP, rawIndex: addrValIdx + addrLen, version };
 }
 async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper) {
-    console.log(`[TCP转发] 目标: ${host}:${portNum} | 反代IP: ${反代IP} | 反代类型: ${启用SOCKS5反代 || 'proxyip'} | 全局: ${启用SOCKS5全局反代 ? '是' : '否'}`);
-    async function connectDirect(address, port, data, 所有反代数组 = null) {
+    console.log(`[TCP转发] 目标: ${host}:${portNum} | 反代IP: ${反代IP} | 反代兜底: ${启用反代兜底 ? '是' : '否'} | 反代类型: ${启用SOCKS5反代 || 'proxyip'} | 全局: ${启用SOCKS5全局反代 ? '是' : '否'}`);
+    
+    async function connectDirect(address, port, data, 所有反代数组 = null, 反代兜底 = true) {
         let remoteSock;
         if (所有反代数组 && 所有反代数组.length > 0) {
             const 最大尝试次数 = 缓存反代数组索引 + Math.min(8, 所有反代数组.length);
@@ -530,12 +532,19 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
                 }
             }
         }
-        remoteSock = connect({ hostname: address, port: port });
-        const writer = remoteSock.writable.getWriter();
-        await writer.write(data);
-        writer.releaseLock();
-        return remoteSock;
+
+        if (反代兜底) {
+            remoteSock = connect({ hostname: address, port: port });
+            const writer = remoteSock.writable.getWriter();
+            await writer.write(data);
+            writer.releaseLock();
+            return remoteSock;
+        } else {
+            closeSocketQuietly(ws);
+            throw new Error('[反代连接] 所有反代连接失败，且未启用反代兜底，连接终止。');
+        }
     }
+
     async function connecttoPry() {
         let newSocket;
         if (启用SOCKS5反代 === 'socks5') {
@@ -544,7 +553,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
             newSocket = await httpConnect(host, portNum, rawData);
         } else {
             const 所有反代数组 = await 解析地址端口(反代IP);
-            newSocket = await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, rawData, 所有反代数组);
+            newSocket = await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, rawData, 所有反代数组, 启用反代兜底);
         }
         remoteConnWrapper.socket = newSocket;
         newSocket.closed.catch(() => { }).finally(() => closeSocketQuietly(ws));
@@ -1157,10 +1166,12 @@ async function 反代参数获取(request) {
     if (searchParams.has('proxyip')) {
         const 路参IP = searchParams.get('proxyip');
         反代IP = 路参IP.includes(',') ? 路参IP.split(',')[Math.floor(Math.random() * 路参IP.split(',').length)] : 路参IP;
+        启用反代兜底 = false;
         return;
     } else if (proxyMatch) {
         const 路参IP = proxyMatch[1] === 'proxyip.' ? `proxyip.${proxyMatch[2]}` : proxyMatch[2];
         反代IP = 路参IP.includes(',') ? 路参IP.split(',')[Math.floor(Math.random() * 路参IP.split(',').length)] : 路参IP;
+        启用反代兜底 = false;
         return;
     }
 
