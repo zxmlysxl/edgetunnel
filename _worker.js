@@ -548,10 +548,13 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
     async function connecttoPry() {
         let newSocket;
         if (启用SOCKS5反代 === 'socks5') {
+            console.log(`[SOCKS5代理] 代理到: ${host}:${portNum}`);
             newSocket = await socks5Connect(host, portNum, rawData);
         } else if (启用SOCKS5反代 === 'http' || 启用SOCKS5反代 === 'https') {
+            console.log(`[HTTP代理] 代理到: ${host}:${portNum}`);
             newSocket = await httpConnect(host, portNum, rawData);
         } else {
+            console.log(`[反代连接] 代理到: ${host}:${portNum}`);
             const 所有反代数组 = await 解析地址端口(反代IP);
             newSocket = await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, rawData, 所有反代数组, 启用反代兜底);
         }
@@ -562,6 +565,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
 
     const 验证SOCKS5白名单 = (addr) => SOCKS5白名单.some(p => new RegExp(`^${p.replace(/\*/g, '.*')}$`, 'i').test(addr));
     if (启用SOCKS5反代 && (启用SOCKS5全局反代 || 验证SOCKS5白名单(host))) {
+        console.log(`[TCP转发] 启用 SOCKS5/HTTP 全局代理`);
         try {
             await connecttoPry();
         } catch (err) {
@@ -569,6 +573,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
         }
     } else {
         try {
+            console.log(`[TCP转发] 尝试直连到: ${host}:${portNum}`);
             const initialSocket = await connectDirect(host, portNum, rawData);
             remoteConnWrapper.socket = initialSocket;
             connectStreams(initialSocket, ws, respHeader, connecttoPry);
