@@ -238,8 +238,12 @@ export default {
                             const 优选API = [], 优选IP = [], 其他节点 = [];
                             for (const 元素 of 完整优选列表) {
                                 if (元素.toLowerCase().startsWith('https://')) 优选API.push(元素);
-                                else if (元素.toLowerCase().includes('://')) 其他节点.push(元素);
-                                else 优选IP.push(元素);
+                                else if (元素.toLowerCase().includes('://')) {
+                                    if (元素.includes('#')) {
+                                        const 地址备注分离 = 元素.split('#');
+                                        其他节点.push(地址备注分离[0] + '#' + encodeURIComponent(decodeURIComponent(地址备注分离[1])));
+                                    } else 其他节点.push(元素);
+                                } else 优选IP.push(元素);
                             }
                             其他节点LINK = 其他节点.join('\n') + '\n';
                             const 优选API的IP = await 请求优选API(优选API);
