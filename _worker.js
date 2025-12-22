@@ -388,7 +388,7 @@ async function 处理WS请求(request, yourUUID) {
             if (判断是否是木马) {
                 const { port, hostname, rawClientData } = 解析木马请求(chunk, yourUUID);
                 if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
-                await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper);
+                await forwardataTCP(hostname, port, rawClientData, serverSock, null, remoteConnWrapper, yourUUID);
             } else {
                 const { port, hostname, rawIndex, version, isUDP } = 解析魏烈思请求(chunk, yourUUID);
                 if (isSpeedTestSite(hostname)) throw new Error('Speedtest site is blocked');
@@ -399,7 +399,7 @@ async function 处理WS请求(request, yourUUID) {
                 const respHeader = new Uint8Array([version[0], 0]);
                 const rawData = chunk.slice(rawIndex);
                 if (isDnsQuery) return forwardataudp(rawData, serverSock, respHeader);
-                await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper);
+                await forwardataTCP(hostname, port, rawData, serverSock, respHeader, remoteConnWrapper, yourUUID);
             }
         },
     })).catch((err) => {
@@ -503,17 +503,17 @@ function 解析魏烈思请求(chunk, token) {
     if (!hostname) return { hasError: true, message: `Invalid address: ${addressType}` };
     return { hasError: false, addressType, port, hostname, isUDP, rawIndex: addrValIdx + addrLen, version };
 }
-async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper) {
+async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnWrapper, yourUUID) {
     console.log(`[TCP转发] 目标: ${host}:${portNum} | 反代IP: ${反代IP} | 反代兜底: ${启用反代兜底 ? '是' : '否'} | 反代类型: ${启用SOCKS5反代 || 'proxyip'} | 全局: ${启用SOCKS5全局反代 ? '是' : '否'}`);
-    
+
     async function connectDirect(address, port, data, 所有反代数组 = null, 反代兜底 = true) {
         let remoteSock;
         if (所有反代数组 && 所有反代数组.length > 0) {
-            const 最大尝试次数 = 缓存反代数组索引 + Math.min(8, 所有反代数组.length);
-            for (; 缓存反代数组索引 < 最大尝试次数; 缓存反代数组索引++) {
-                const [反代地址, 反代端口] = 所有反代数组[缓存反代数组索引 % 所有反代数组.length];
+            for (let i = 0; i < 所有反代数组.length; i++) {
+                const 反代数组索引 = (缓存反代数组索引 + i) % 所有反代数组.length;
+                const [反代地址, 反代端口] = 所有反代数组[反代数组索引];
                 try {
-                    console.log(`[反代连接] 尝试连接到: ${反代地址}:${反代端口} (索引: ${缓存反代数组索引})`);
+                    console.log(`[反代连接] 尝试连接到: ${反代地址}:${反代端口} (索引: ${反代数组索引})`);
                     remoteSock = connect({ hostname: 反代地址, port: 反代端口 });
                     // 等待TCP连接真正建立，设置1秒超时
                     await Promise.race([
@@ -524,6 +524,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
                     await testWriter.write(data);
                     testWriter.releaseLock();
                     console.log(`[反代连接] 成功连接到: ${反代地址}:${反代端口}`);
+                    缓存反代数组索引 = 反代数组索引;
                     return remoteSock;
                 } catch (err) {
                     console.log(`[反代连接] 连接失败: ${反代地址}:${反代端口}, 错误: ${err.message}`);
@@ -555,7 +556,7 @@ async function forwardataTCP(host, portNum, rawData, ws, respHeader, remoteConnW
             newSocket = await httpConnect(host, portNum, rawData);
         } else {
             console.log(`[反代连接] 代理到: ${host}:${portNum}`);
-            const 所有反代数组 = await 解析地址端口(反代IP);
+            const 所有反代数组 = await 解析地址端口(反代IP, host, yourUUID);
             newSocket = await connectDirect(atob('UFJPWFlJUC50cDEuMDkwMjI3Lnh5eg=='), 1, rawData, 所有反代数组, 启用反代兜底);
         }
         remoteConnWrapper.socket = newSocket;
@@ -1342,7 +1343,7 @@ function sha224(s) {
     return hex;
 }
 
-async function 解析地址端口(proxyIP) {
+async function 解析地址端口(proxyIP, 目标域名 = 'dash.cloudflare.com', UUID = '00000000-0000-4000-8000-000000000000') {
     if (!缓存反代IP || !缓存反代解析数组 || 缓存反代IP !== proxyIP) {
         proxyIP = proxyIP.toLowerCase();
         async function DoH查询(域名, 记录类型) {
@@ -1418,7 +1419,12 @@ async function 解析地址端口(proxyIP) {
                 所有反代数组 = [[地址, 端口]];
             }
         }
-        缓存反代解析数组 = 所有反代数组;
+        const 排序后数组 = 所有反代数组.sort((a, b) => a[0].localeCompare(b[0]));
+        const 目标根域名 = 目标域名.includes('.') ? 目标域名.split('.').slice(-2).join('.') : 目标域名;
+        let 随机种子 = [...(目标根域名 + UUID)].reduce((a, c) => a + c.charCodeAt(0), 0);
+        console.log(`[反代解析] 随机种子: ${随机种子}\n目标站点: ${目标根域名}`)
+        const 洗牌后 = [...排序后数组].sort(() => (随机种子 = (随机种子 * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff - 0.5);
+        缓存反代解析数组 = 洗牌后.slice(0, 8);
         console.log(`[反代解析] 解析完成 总数: ${缓存反代解析数组.length}个\n${缓存反代解析数组.map(([ip, port], index) => `${index + 1}. ${ip}:${port}`).join('\n')}`);
         缓存反代IP = proxyIP;
     } else console.log(`[反代解析] 读取缓存 总数: ${缓存反代解析数组.length}个\n${缓存反代解析数组.map(([ip, port], index) => `${index + 1}. ${ip}:${port}`).join('\n')}`);
