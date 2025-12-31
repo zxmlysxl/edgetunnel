@@ -1062,9 +1062,17 @@ async function 整理成数组(内容) {
 }
 
 function isValidBase64(str) {
+    if (typeof str !== 'string') return false;
     const cleanStr = str.replace(/\s/g, '');
-    const base64Regex = /^[A-Za-z0-9+/=]+$/;
-    return base64Regex.test(cleanStr);
+    if (cleanStr.length === 0 || cleanStr.length % 4 !== 0) return false;
+    const base64Regex = /^[A-Za-z0-9+/]+={0,2}$/;
+    if (!base64Regex.test(cleanStr)) return false;
+    try {
+        atob(cleanStr);
+        return true;
+    } catch {
+        return false;
+    }
 }
 
 function base64Decode(str) {
