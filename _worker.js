@@ -935,7 +935,7 @@ function Singbox订阅配置文件热补丁(sb_json_text) {
         return JSON.stringify(config, null, 2);
     } catch (e) {
         console.error("Singbox热补丁执行失败:", e);
-        return sb_json_text;
+        return JSON.stringify(JSON.parse(sb_json_text), null, 2);
     }
 }
 
