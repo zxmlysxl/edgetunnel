@@ -348,10 +348,17 @@ export default {
         try {
             const 反代URL = new URL(伪装页URL), 新请求头 = new Headers(request.headers);
             新请求头.set('Host', 反代URL.host);
-            if (新请求头.has('Referer')) { const u = new URL(新请求头.get('Referer')); 新请求头.set('Referer', 反代URL.protocol + '//' + 反代URL.host + u.pathname + u.search); }
-            if (新请求头.has('Origin')) 新请求头.set('Origin', 反代URL.protocol + '//' + 反代URL.host);
+            新请求头.set('Referer', 反代URL.origin);
+            新请求头.set('Origin', 反代URL.origin);
             if (!新请求头.has('User-Agent') && UA && UA !== 'null') 新请求头.set('User-Agent', UA);
-            return fetch(new Request(反代URL.protocol + 反代URL.host + url.pathname + url.search, { method: request.method, headers: 新请求头, body: request.body, cf: request.cf }));
+            const 反代响应 = await fetch(反代URL.origin + url.pathname + url.search, { method: request.method, headers: 新请求头, body: request.body, cf: request.cf });
+            const 内容类型 = 反代响应.headers.get('content-type') || '';
+            // 只处理文本类型的响应
+            if (/text|javascript|json|xml/.test(内容类型)) {
+                const 响应内容 = (await 反代响应.text()).replaceAll(反代URL.host, url.host);
+                return new Response(响应内容, { status: 反代响应.status, headers: { ...Object.fromEntries(反代响应.headers), 'Cache-Control': 'no-store' } });
+            }
+            return 反代响应;
         } catch (error) { }
         return new Response(await nginx(), { status: 200, headers: { 'Content-Type': 'text/html; charset=UTF-8' } });
     }
