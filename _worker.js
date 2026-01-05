@@ -839,7 +839,7 @@ function Singbox订阅配置文件热补丁(sb_json_text) {
                                 tag: tag,
                                 type: "remote",
                                 format: "binary",
-                                url: `https://github.cmliussss.net/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-${name}.srs`,
+                                url: `https://gh.090227.xyz/https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-${name}.srs`,
                                 download_detour: "DIRECT"
                             });
                         }
@@ -857,7 +857,7 @@ function Singbox订阅配置文件热补丁(sb_json_text) {
                                 tag: tag,
                                 type: "remote",
                                 format: "binary",
-                                url: `https://github.cmliussss.net/https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-${name}.srs`,
+                                url: `https://gh.090227.xyz/https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-${name}.srs`,
                                 download_detour: "DIRECT"
                             });
                         }
