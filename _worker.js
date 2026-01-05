@@ -330,7 +330,6 @@ export default {
                         }
                         return new Response(订阅内容, { status: 200, headers: responseHeaders });
                     }
-                    return new Response('无效的订阅TOKEN', { status: 403 });
                 } else if (访问路径 === 'locations') {//反代locations列表
                     const cookies = request.headers.get('Cookie') || '';
                     const authCookie = cookies.split(';').find(c => c.trim().startsWith('auth='))?.split('=')[1];
