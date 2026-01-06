@@ -207,7 +207,7 @@ export default {
                         if (config_JSON.CF.Usage.success) {
                             pagesSum = config_JSON.CF.Usage.pages;
                             workersSum = config_JSON.CF.Usage.workers;
-                            total = 1024 * 100;
+                            total = Number.isFinite(config_JSON.CF.Usage.max) ? (config_JSON.CF.Usage.max / 1000) * 1024 : 1024 * 100;
                         }
                         const responseHeaders = {
                             "content-type": "text/plain; charset=utf-8",
