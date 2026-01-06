@@ -122,18 +122,20 @@ export default {
                         } else if (访问路径 === 'admin/cf.json') { // 保存cf.json配置
                             try {
                                 const newConfig = await request.json();
-                                const CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null };
+                                const CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null, APIURL: null };
                                 if (!newConfig.init || newConfig.init !== true) {
                                     if (newConfig.Email && newConfig.GlobalAPIKey) {
                                         CF_JSON.Email = newConfig.Email;
                                         CF_JSON.GlobalAPIKey = newConfig.GlobalAPIKey;
                                         CF_JSON.AccountID = null;
                                         CF_JSON.APIToken = null;
+                                        CF_JSON.APIURL = null;
                                     } else if (newConfig.AccountID && newConfig.APIToken) {
                                         CF_JSON.Email = null;
                                         CF_JSON.GlobalAPIKey = null;
                                         CF_JSON.AccountID = newConfig.AccountID;
                                         CF_JSON.APIToken = newConfig.APIToken;
+                                        CF_JSON.APIURL = null;
                                     } else {
                                         return new Response(JSON.stringify({ error: '配置不完整' }), { status: 400, headers: { 'Content-Type': 'application/json;charset=utf-8' } });
                                     }
@@ -1124,6 +1126,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
             GlobalAPIKey: null,
             AccountID: null,
             APIToken: null,
+            APIURL: null,
             Usage: {
                 success: false,
                 pages: 0,
@@ -1170,7 +1173,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
         console.error(`读取tg.json出错: ${error.message}`);
     }
 
-    const 初始化CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null };
+    const 初始化CF_JSON = { Email: null, GlobalAPIKey: null, AccountID: null, APIToken: null, APIURL: null };
     config_JSON.CF = { ...初始化CF_JSON, Usage: { success: false, pages: 0, workers: 0, total: 0 } };
     try {
         const CF_TXT = await env.KV.get('cf.json');
@@ -1178,12 +1181,23 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
             await env.KV.put('cf.json', JSON.stringify(初始化CF_JSON, null, 2));
         } else {
             const CF_JSON = JSON.parse(CF_TXT);
-            config_JSON.CF.Email = CF_JSON.Email ? CF_JSON.Email : null;
-            config_JSON.CF.GlobalAPIKey = CF_JSON.GlobalAPIKey ? 掩码敏感信息(CF_JSON.GlobalAPIKey) : null;
-            config_JSON.CF.AccountID = CF_JSON.AccountID ? 掩码敏感信息(CF_JSON.AccountID) : null;
-            config_JSON.CF.APIToken = CF_JSON.APIToken ? 掩码敏感信息(CF_JSON.APIToken) : null;
-            const Usage = await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
-            config_JSON.CF.Usage = Usage;
+            if (CF_JSON.APIURL) {
+                try {
+                    const response = await fetch(CF_JSON.APIURL);
+                    const Usage = await response.json();
+                    config_JSON.CF.Usage = Usage;
+                } catch (err) {
+                    console.error(`请求 CF_JSON.APIURL 失败: ${err.message}`);
+                }
+            } else {
+                config_JSON.CF.Email = CF_JSON.Email ? CF_JSON.Email : null;
+                config_JSON.CF.GlobalAPIKey = CF_JSON.GlobalAPIKey ? 掩码敏感信息(CF_JSON.GlobalAPIKey) : null;
+                config_JSON.CF.AccountID = CF_JSON.AccountID ? 掩码敏感信息(CF_JSON.AccountID) : null;
+                config_JSON.CF.APIToken = CF_JSON.APIToken ? 掩码敏感信息(CF_JSON.APIToken) : null;
+                config_JSON.CF.APIURL = null;
+                const Usage = await getCloudflareUsage(CF_JSON.Email, CF_JSON.GlobalAPIKey, CF_JSON.AccountID, CF_JSON.APIToken);
+                config_JSON.CF.Usage = Usage;
+            }
         }
     } catch (error) {
         console.error(`读取cf.json出错: ${error.message}`);
