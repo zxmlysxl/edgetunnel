@@ -279,7 +279,7 @@ export default {
                                     return new Response('优选订阅生成器异常：' + error.message, { status: 403 });
                                 }
                             }
-
+                            const ECHLINK参数 = config_JSON.ECH ? '&ech=ECHConfigList+cloudflare-ech.com' : '';
                             订阅内容 = 其他节点LINK + 完整优选IP.map(原始地址 => {
                                 // 统一正则: 匹配 域名/IPv4/IPv6地址 + 可选端口 + 可选备注
                                 // 示例: 
@@ -301,7 +301,7 @@ export default {
                                     return null;
                                 }
 
-                                return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls&type=${config_JSON.传输协议}&host=example.com&sni=example.com&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
+                                return `${协议类型}://00000000-0000-4000-8000-000000000000@${节点地址}:${节点端口}?security=tls${ECHLINK参数}&type=${config_JSON.传输协议}&host=example.com&sni=example.com&path=${encodeURIComponent(config_JSON.随机路径 ? 随机路径() + 节点路径 : 节点路径) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(节点备注)}`;
                             }).filter(item => item !== null).join('\n');
                         } else { // 订阅转换
                             const 订阅转换URL = `${config_JSON.订阅转换配置.SUBAPI}/sub?target=${订阅类型}&url=${encodeURIComponent(url.protocol + '//' + url.host + '/sub?target=mixed&token=' + 订阅TOKEN + (url.searchParams.has('sub') && url.searchParams.get('sub') != '' ? `&sub=${url.searchParams.get('sub')}` : ''))}&config=${encodeURIComponent(config_JSON.订阅转换配置.SUBCONFIG)}&emoji=${config_JSON.订阅转换配置.SUBEMOJI}&scv=${config_JSON.跳过证书验证}`;
@@ -316,7 +316,7 @@ export default {
                             }
                         }
 
-                        if (!ua.includes('subconverter')) 订阅内容 = 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), config_JSON.HOSTS)
+                        if (!ua.includes('subconverter')) 订阅内容 = await 批量替换域名(订阅内容.replace(/00000000-0000-4000-8000-000000000000/g, config_JSON.UUID), config_JSON.HOSTS)
 
                         if (订阅类型 === 'mixed' && (!ua.includes('mozilla') || url.searchParams.has('b64') || url.searchParams.has('base64'))) 订阅内容 = btoa(订阅内容);
 
@@ -1061,14 +1061,80 @@ function 随机替换通配符(h) {
     });
 }
 
-function 批量替换域名(内容, hosts, 每组数量 = 2) {
+// ECHConfigList缓存，用于存储host对应的ECH配置
+const ECHConfigCache = new Map();
+async function 批量替换域名(内容, hosts, 每组数量 = 2) {
     const 打乱后数组 = [...hosts].sort(() => Math.random() - 0.5);
     let count = 0, currentRandomHost = null;
-    return 内容.replace(/example\.com/g, () => {
-        if (count % 每组数量 === 0) currentRandomHost = 随机替换通配符(打乱后数组[Math.floor(count / 每组数量) % 打乱后数组.length]);
+    const hostGroups = []; // 记录每组对应的host
+
+    // 第一步：替换所有 example.com，并记录每组对应的 host
+    let 替换后内容 = 内容.replace(/example\.com/g, () => {
+        if (count % 每组数量 === 0) {
+            currentRandomHost = 随机替换通配符(打乱后数组[Math.floor(count / 每组数量) % 打乱后数组.length]);
+            hostGroups.push(currentRandomHost);
+        }
         count++;
         return currentRandomHost;
     });
+
+    // 第二步：检查是否存在 ECHConfigList+cloudflare-ech.com 需要替换
+    const echPattern = /ECHConfigList\+cloudflare-ech\.com/g;
+    if (!echPattern.test(替换后内容)) {
+        return 替换后内容;
+    }
+
+    // 第三步：为每个 host 获取 ECH 配置（使用缓存避免重复请求）
+    for (const host of hostGroups) {
+        if (!ECHConfigCache.has(host)) {
+            const ech = encodeURIComponent(await getECH(host));
+            ECHConfigCache.set(host, ech || '');
+        }
+    }
+
+    // 第四步：按顺序替换 ECHConfigList+cloudflare-ech.com
+    // 每组数量个 host 替换对应一个 ech 替换
+    let echIndex = 0;
+    替换后内容 = 替换后内容.replace(/ECHConfigList\+cloudflare-ech\.com/g, () => {
+        const host = hostGroups[echIndex % hostGroups.length];
+        const ech = ECHConfigCache.get(host) || '';
+        echIndex++;
+        return ech;
+    });
+
+    return 替换后内容;
+}
+
+async function getECH(host) {
+    try {
+        const res = await fetch(`https://1.1.1.1/dns-query?name=${encodeURIComponent(host)}&type=65`, { headers: { 'accept': 'application/dns-json' } });
+        const data = await res.json();
+        if (!data.Answer?.length) return '';
+        for (let ans of data.Answer) {
+            if (ans.type !== 65 || !ans.data) continue;
+            const match = ans.data.match(/ech=([^\s]+)/);
+            if (match) return match[1].replace(/"/g, '');
+            if (ans.data.startsWith('\\#')) {
+                const hex = ans.data.split(' ').slice(2).join('');
+                const bytes = new Uint8Array(hex.match(/.{1,2}/g).map(b => parseInt(b, 16)));
+                let offset = 2;
+                while (offset < bytes.length && bytes[offset++] !== 0)
+                    offset += bytes[offset - 1];
+
+                while (offset + 4 <= bytes.length) {
+                    const key = (bytes[offset] << 8) | bytes[offset + 1];
+                    const len = (bytes[offset + 2] << 8) | bytes[offset + 3];
+                    offset += 4;
+
+                    if (key === 5) return btoa(String.fromCharCode(...bytes.slice(offset, offset + len)));
+                    offset += len;
+                }
+            }
+        }
+        return '';
+    } catch {
+        return '';
+    }
 }
 
 async function 读取config_JSON(env, hostname, userID, path, 重置配置 = false) {
@@ -1086,6 +1152,7 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
         启用0RTT: false,
         TLS分片: null,
         随机路径: false,
+        ECH: false,
         优选订阅生成: {
             local: true, // true: 基于本地的优选地址  false: 优选订阅生成器
             本地IP库: {
@@ -1152,7 +1219,9 @@ async function 读取config_JSON(env, hostname, userID, path, 重置配置 = fal
     config_JSON.UUID = userID;
     config_JSON.PATH = path ? (path.startsWith('/') ? path : '/' + path) : (config_JSON.反代.SOCKS5.启用 ? ('/' + config_JSON.反代.SOCKS5.启用 + (config_JSON.反代.SOCKS5.全局 ? '://' : '=') + config_JSON.反代.SOCKS5.账号) : (config_JSON.反代.PROXYIP === 'auto' ? '/' : `/proxyip=${config_JSON.反代.PROXYIP}`));
     const TLS分片参数 = config_JSON.TLS分片 == 'Shadowrocket' ? `&fragment=${encodeURIComponent('1,40-60,30-50,tlshello')}` : config_JSON.TLS分片 == 'Happ' ? `&fragment=${encodeURIComponent('3,1,tlshello')}` : '';
-    config_JSON.LINK = `${config_JSON.协议类型}://${userID}@${host}:443?security=tls&type=${config_JSON.传输协议}&host=${host}&sni=${host}&path=${encodeURIComponent(config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}`;
+    if (!config_JSON.ECH) config_JSON.ECH = false;
+    const ECH参数 = config_JSON.ECH ? '&ech=' + encodeURIComponent(await getECH(host)) : '';
+    config_JSON.LINK = `${config_JSON.协议类型}://${userID}@${host}:443?security=tls&type=${config_JSON.传输协议 + ECH参数}&host=${host}&sni=${host}&path=${encodeURIComponent(config_JSON.启用0RTT ? config_JSON.PATH + '?ed=2560' : config_JSON.PATH) + TLS分片参数}&encryption=none${config_JSON.跳过证书验证 ? '&allowInsecure=1' : ''}#${encodeURIComponent(config_JSON.优选订阅生成.SUBNAME)}`;
     config_JSON.优选订阅生成.TOKEN = await MD5MD5(hostname + userID);
 
     const 初始化TG_JSON = { BotToken: null, ChatID: null };
