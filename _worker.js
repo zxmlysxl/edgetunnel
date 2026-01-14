@@ -321,7 +321,7 @@ export default {
                         if (订阅类型 === 'mixed' && (!ua.includes('mozilla') || url.searchParams.has('b64') || url.searchParams.has('base64'))) 订阅内容 = btoa(订阅内容);
 
                         if (订阅类型 === 'singbox') {
-                            订阅内容 = Singbox订阅配置文件热补丁(订阅内容);
+                            订阅内容 = Singbox订阅配置文件热补丁(订阅内容, config_JSON.UUID, config_JSON.Fingerprint, config_JSON.ECH ? await getECH(host) : null);
                             responseHeaders["content-type"] = 'application/json; charset=utf-8';
                         } else if (订阅类型 === 'clash') {
                             responseHeaders["content-type"] = 'application/x-yaml; charset=utf-8';
@@ -784,7 +784,7 @@ async function httpConnect(targetHost, targetPort, initialData) {
     }
 }
 //////////////////////////////////////////////////功能性函数///////////////////////////////////////////////
-function Singbox订阅配置文件热补丁(sb_json_text) {
+function Singbox订阅配置文件热补丁(sb_json_text, uuid = null, fingerprint = "chrome", ech_config = null) {
     try {
         let config = JSON.parse(sb_json_text);
 
@@ -928,6 +928,35 @@ function Singbox订阅配置文件热补丁(sb_json_text) {
                 }
             }
         });
+
+        // --- 4. UUID 匹配节点的 TLS 热补丁 (utls & ech) ---
+        if (uuid) {
+            config.outbounds.forEach(outbound => {
+                // 仅处理包含 uuid 且匹配的节点
+                if (outbound.uuid && outbound.uuid === uuid) {
+                    // 确保 tls 对象存在
+                    if (!outbound.tls) {
+                        outbound.tls = { enabled: true };
+                    }
+
+                    // 添加/更新 utls 配置
+                    if (fingerprint) {
+                        outbound.tls.utls = {
+                            enabled: true,
+                            fingerprint: fingerprint
+                        };
+                    }
+
+                    // 如果提供了 ech_config，添加/更新 ech 配置
+                    if (ech_config) {
+                        outbound.tls.ech = {
+                            enabled: true,
+                            config: `-----BEGIN ECH CONFIGS-----\n${ech_config}\n-----END ECH CONFIGS-----`
+                        };
+                    }
+                }
+            });
+        }
 
         return JSON.stringify(config, null, 2);
     } catch (e) {
